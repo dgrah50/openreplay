@@ -707,3 +707,18 @@ export function AdoptedSSRemoveOwner(
   ]
 }
 
+export function ExceptionWithMeta(
+  name: string,
+  message: string,
+  payload: string,
+  meta: string,
+): Messages.ExceptionWithMeta {
+  return [ 
+    Messages.Type.ExceptionWithMeta,
+    name,
+    message,
+    payload,
+    meta,
+  ]
+}
+
