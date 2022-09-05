@@ -1,7 +1,7 @@
 import App, { DEFAULT_INGEST_POINT } from './app/index.js'
 export { default as App } from './app/index.js'
 
-import { UserID, UserAnonymousID, RawCustomEvent, CustomIssue } from './app/messages.gen.js'
+import { UserAnonymousID, RawCustomEvent, CustomIssue } from './app/messages.gen.js'
 import * as _Messages from './app/messages.gen.js'
 export const Messages = _Messages
 
@@ -277,17 +277,17 @@ export default class API {
     }
   }
 
-  handleError = (e: Error | ErrorEvent | PromiseRejectionEvent, extraInfo?: ErrorExtra) => {
+  handleError = (e: Error | ErrorEvent | PromiseRejectionEvent, metadata?: ErrorExtra) => {
     if (this.app === null) {
       return
     }
     if (e instanceof Error) {
-      this.app.send(getExceptionMessage(e, []))
+      this.app.send(getExceptionMessage(e, [], metadata))
     } else if (
       e instanceof ErrorEvent ||
       ('PromiseRejectionEvent' in window && e instanceof PromiseRejectionEvent)
     ) {
-      const msg = getExceptionMessageFromEvent(e)
+      const msg = getExceptionMessageFromEvent(e, undefined, metadata)
       if (msg != null) {
         this.app.send(msg)
       }
