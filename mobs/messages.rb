@@ -460,6 +460,5 @@ message 78, 'ExceptionWithMeta', :replayer => false do
   string 'Name'
   string 'Message'
   string 'Payload'
-  string 'Tags'
   string 'Metadata'
 end

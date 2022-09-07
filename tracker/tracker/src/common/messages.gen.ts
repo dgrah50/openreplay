@@ -444,7 +444,6 @@ export type ExceptionWithMeta = [
   /*name:*/ string,
   /*message:*/ string,
   /*payload:*/ string,
-  /*tags:*/ string,
   /*metadata:*/ string,
 ]
 
