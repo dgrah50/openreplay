@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	"openreplay/backend/pkg/queue/types"
 	"os"
@@ -27,8 +29,26 @@ func main() {
 	// Load service configuration
 	cfg := ender.New()
 
-	pg := cache.NewPGCache(postgres.NewConn(cfg.Postgres, 0, 0, metrics), cfg.ProjectExpirationTimeoutMs)
-	defer pg.Close()
+	// 1. Create pool of connections to DB (postgres)
+	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
+	if err != nil {
+		log.Fatalf("pgxpool.Connect err: %s", err)
+	}
+	// 2. Create pool wrapper
+	connWrapper, err := postgres.NewPool(conn, metrics)
+	if err != nil {
+		log.Fatalf("can't create new pool wrapper: %s", err)
+	}
+	// 3. Create cache level for projects and sessions
+	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
+	if err != nil {
+		log.Fatalf("can't create cacher, err: %s", err)
+	}
+	// 4. Create db layer with all necessary methods
+	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+
+	//pg := cache.NewPGCache(postgres.NewConn(cfg.Postgres, 0, 0, metrics), cfg.ProjectExpirationTimeoutMs)
+	defer dbService.Close() //TODO: decide do we need it or not
 
 	// Init all modules
 	statsLogger := logger.NewQueueStats(cfg.LoggerTimeout)
@@ -79,19 +99,10 @@ func main() {
 			// Find ended sessions and send notification to other services
 			sessions.HandleEndedSessions(func(sessionID uint64, timestamp int64) bool {
 				msg := &messages.SessionEnd{Timestamp: uint64(timestamp)}
-				currDuration, err := pg.GetSessionDuration(sessionID)
-				if err != nil {
-					log.Printf("getSessionDuration failed, sessID: %d, err: %s", sessionID, err)
-				}
-				newDuration, err := pg.InsertSessionEnd(sessionID, msg.Timestamp)
+				err := dbService.InsertSessionEnd(sessionID, msg)
 				if err != nil {
 					log.Printf("can't save sessionEnd to database, sessID: %d, err: %s", sessionID, err)
 					return false
-				}
-				if currDuration == newDuration {
-					log.Printf("sessionEnd duplicate, sessID: %d, prevDur: %d, newDur: %d", sessionID,
-						currDuration, newDuration)
-					return true
 				}
 				if err := producer.Produce(cfg.TopicRawWeb, sessionID, messages.Encode(msg)); err != nil {
 					log.Printf("can't send sessionEnd to topic: %s; sessID: %d", err, sessionID)

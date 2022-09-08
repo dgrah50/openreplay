@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	config "openreplay/backend/internal/config/integrations"
 	"openreplay/backend/internal/integrations/clientManager"
+	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/monitoring"
 	"time"
 
@@ -26,14 +29,31 @@ func main() {
 
 	cfg := config.New()
 
-	pg := postgres.NewConn(cfg.PostgresURI, 0, 0, metrics)
-	defer pg.Close()
+	// 1. Create pool of connections to DB (postgres)
+	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
+	if err != nil {
+		log.Fatalf("pgxpool.Connect err: %s", err)
+	}
+	// 2. Create pool wrapper
+	connWrapper, err := postgres.NewPool(conn, metrics)
+	if err != nil {
+		log.Fatalf("can't create new pool wrapper: %s", err)
+	}
+	// 3. Create cache level for projects and sessions
+	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
+	if err != nil {
+		log.Fatalf("can't create cacher, err: %s", err)
+	}
+	// 4. Create db layer with all necessary methods
+	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+	//pg := postgres.NewConn(cfg.PostgresURI, 0, 0, metrics)
+	//defer pg.Close()
 
 	tokenizer := token.NewTokenizer(cfg.TokenSecret)
 
 	manager := clientManager.NewManager()
 
-	pg.IterateIntegrationsOrdered(func(i *postgres.Integration, err error) {
+	dbService.IterateIntegrationsOrdered(func(i *postgres.Integration, err error) {
 		if err != nil {
 			log.Printf("Postgres error: %v\n", err)
 			return
@@ -49,7 +69,8 @@ func main() {
 	producer := queue.NewProducer(cfg.MessageSizeLimit, true)
 	defer producer.Close(15000)
 
-	listener, err := postgres.NewIntegrationsListener(cfg.PostgresURI)
+	// TODO: check it
+	listener, err := postgres.NewIntegrationsListener(cfg.Postgres)
 	if err != nil {
 		log.Printf("Postgres listener error: %v\n", err)
 		log.Fatalf("Postgres listener error")
@@ -68,7 +89,7 @@ func main() {
 		case sig := <-sigchan:
 			log.Printf("Caught signal %v: terminating\n", sig)
 			listener.Close()
-			pg.Close()
+			dbService.Close()
 			os.Exit(0)
 		case <-tick:
 			log.Printf("Requesting all...\n")
@@ -89,13 +110,13 @@ func main() {
 			log.Printf("Integration error: %v\n", err)
 		case i := <-manager.RequestDataUpdates:
 			// log.Printf("Last request integration update: %v || %v\n", i, string(i.RequestData))
-			if err := pg.UpdateIntegrationRequestData(&i); err != nil {
+			if err := dbService.UpdateIntegrationRequestData(&i); err != nil {
 				log.Printf("Postgres Update request_data error: %v\n", err)
 			}
 		case err := <-listener.Errors:
 			log.Printf("Postgres listen error: %v\n", err)
 			listener.Close()
-			pg.Close()
+			dbService.Close()
 			os.Exit(0)
 		case iPointer := <-listener.Integrations:
 			log.Printf("Integration update: %v\n", *iPointer)

@@ -14,7 +14,7 @@ type Integration struct {
 	Options     json.RawMessage `json:"options"`
 }
 
-func (conn *Conn) IterateIntegrationsOrdered(iter func(integration *Integration, err error)) error {
+func (conn *dbImpl) IterateIntegrationsOrdered(iter func(integration *Integration, err error)) error {
 	rows, err := conn.c.Query(`
 		SELECT project_id, provider, options, request_data
 		FROM integrations
@@ -39,7 +39,7 @@ func (conn *Conn) IterateIntegrationsOrdered(iter func(integration *Integration,
 	return nil
 }
 
-func (conn *Conn) UpdateIntegrationRequestData(i *Integration) error {
+func (conn *dbImpl) UpdateIntegrationRequestData(i *Integration) error {
 	return conn.c.Exec(`
 		UPDATE integrations 
 		SET request_data = $1 

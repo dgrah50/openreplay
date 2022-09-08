@@ -15,7 +15,7 @@ type UnstartedSession struct {
 	UserCountry        string
 }
 
-func (conn *Conn) InsertUnstartedSession(s UnstartedSession) error {
+func (conn *dbImpl) InsertUnstartedSession(s UnstartedSession) error {
 	return conn.c.Exec(`
 		INSERT INTO unstarted_sessions (
 			project_id, 

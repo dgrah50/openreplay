@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	"openreplay/backend/pkg/queue/types"
 	"os"
@@ -29,9 +31,23 @@ func main() {
 
 	cfg := db.New()
 
-	// Init database
-	pg := cache.NewPGCache(postgres.NewConn(cfg.Postgres, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics), cfg.ProjectExpirationTimeoutMs)
-	defer pg.Close()
+	// 1. Create pool of connections to DB (postgres)
+	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
+	if err != nil {
+		log.Fatalf("pgxpool.Connect err: %s", err)
+	}
+	// 2. Create pool wrapper
+	connWrapper, err := postgres.NewPool(conn, metrics)
+	if err != nil {
+		log.Fatalf("can't create new pool wrapper: %s", err)
+	}
+	// 3. Create cache level for projects and sessions
+	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
+	if err != nil {
+		log.Fatalf("can't create cacher, err: %s", err)
+	}
+	// 4. Create db layer with all necessary methods
+	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
 
 	// HandlersFabric returns the list of message handlers we want to be applied to each incoming message.
 	handlersFabric := func() []handlers.MessageProcessor {
@@ -56,7 +72,7 @@ func main() {
 	}
 
 	// Init modules
-	saver := datasaver.New(pg, producer)
+	saver := datasaver.New(dbService, producer)
 	saver.InitStats()
 	statsLogger := logger.NewQueueStats(cfg.LoggerTimeout)
 
@@ -78,7 +94,7 @@ func main() {
 				return
 			}
 
-			session, err := pg.GetSession(sessionID)
+			session, err := cacheService.GetSession(sessionID)
 			if session == nil {
 				if err != nil && !errors.Is(err, cache.NilSessionInCacheError) {
 					log.Printf("Error on session retrieving from cache: %v, SessionID: %v, Message: %v", err, sessionID, msg)
@@ -138,7 +154,7 @@ func main() {
 		case <-commitTick:
 			// Send collected batches to db
 			start := time.Now()
-			pg.CommitBatches()
+			dbService.Commit()
 			pgDur := time.Now().Sub(start).Milliseconds()
 
 			start = time.Now()

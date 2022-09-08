@@ -54,30 +54,6 @@ func (mi *Saver) InsertMessage(sessionID uint64, msg Message) error {
 			Message:   m.Message,
 			Payload:   m.Payload,
 		})
-
-		// IOS
-	case *IOSSessionStart:
-		return mi.pg.InsertIOSSessionStart(sessionID, m)
-	case *IOSSessionEnd:
-		return mi.pg.InsertIOSSessionEnd(sessionID, m)
-	case *IOSUserID:
-		return mi.pg.InsertIOSUserID(sessionID, m)
-	case *IOSUserAnonymousID:
-		return mi.pg.InsertIOSUserAnonymousID(sessionID, m)
-	case *IOSCustomEvent:
-		return mi.pg.InsertIOSCustomEvent(sessionID, m)
-	case *IOSClickEvent:
-		return mi.pg.InsertIOSClickEvent(sessionID, m)
-	case *IOSInputEvent:
-		return mi.pg.InsertIOSInputEvent(sessionID, m)
-		// Unique IOS messages
-	case *IOSNetworkCall:
-		return mi.pg.InsertIOSNetworkCall(sessionID, m)
-	case *IOSScreenEnter:
-		return mi.pg.InsertIOSScreenEnter(sessionID, m)
-	case *IOSCrash:
-		return mi.pg.InsertIOSCrash(sessionID, m)
-
 	}
 	return nil // "Not implemented"
 }

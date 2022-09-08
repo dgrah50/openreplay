@@ -3,10 +3,12 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/instrument/syncfloat64"
+	"openreplay/backend/pkg/monitoring"
 	"strings"
 	"time"
 )
@@ -84,15 +86,21 @@ func (p *poolImpl) Close() {
 	p.conn.Close()
 }
 
-func NewPool(conn *pgxpool.Pool, sqlRequestTime syncfloat64.Histogram, sqlRequestCounter syncfloat64.Counter) (Pool, error) {
+func NewPool(conn *pgxpool.Pool, metrics *monitoring.Metrics) (Pool, error) {
 	if conn == nil {
 		return nil, errors.New("conn is empty")
 	}
-	return &poolImpl{
-		conn:              conn,
-		sqlRequestTime:    sqlRequestTime,
-		sqlRequestCounter: sqlRequestCounter,
-	}, nil
+	pool := &poolImpl{conn: conn}
+	var err error
+	pool.sqlRequestTime, err = metrics.RegisterHistogram("sql_request_time")
+	if err != nil {
+		return nil, fmt.Errorf("can't init sqlRequestTime metric, err: %s", err)
+	}
+	pool.sqlRequestCounter, err = metrics.RegisterCounter("sql_request_number")
+	if err != nil {
+		return nil, fmt.Errorf("can't init sqlRequestCounter metric, err: %s", err)
+	}
+	return pool, nil
 }
 
 // TX - start

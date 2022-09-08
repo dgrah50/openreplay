@@ -5,13 +5,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/instrument/syncfloat64"
 	"log"
+	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/db/types"
+	"openreplay/backend/pkg/messages"
 	"openreplay/backend/pkg/monitoring"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 type CH interface {
@@ -23,9 +24,38 @@ type batchItem struct {
 	arguments []interface{}
 }
 
+type DB interface {
+	//InsertSessionEnd(sessionID uint64, timestamp uint64) (uint64, error)
+	//HandleSessionEnd(sessionID uint64) error
+	InsertIssueEvent(sessionID uint64, crash *messages.IssueEvent) error
+	InsertMetadata(sessionID uint64, metadata *messages.Metadata) error
+	InsertWebSessionStart(sessionID uint64, s *messages.SessionStart) error
+	HandleWebSessionStart(sessionID uint64, s *messages.SessionStart) error
+	InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) error
+	HandleWebSessionEnd(sessionID uint64, e *messages.SessionEnd) error
+	InsertWebErrorEvent(sessionID uint64, e *messages.ErrorEvent) error
+	InsertSessionReferrer(sessionID uint64, referrer string) error
+	InsertWebFetchEvent(sessionID uint64, e *messages.FetchEvent) error
+	InsertWebGraphQLEvent(sessionID uint64, e *messages.GraphQLEvent) error
+	InsertWebCustomEvent(sessionID uint64, e *messages.CustomEvent) error
+	InsertWebUserID(sessionID uint64, userID *messages.UserID) error
+	InsertWebUserAnonymousID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error
+	InsertWebPageEvent(sessionID uint64, e *messages.PageEvent) error
+	InsertWebClickEvent(sessionID uint64, e *messages.ClickEvent) error
+	InsertWebInputEvent(sessionID uint64, e *messages.InputEvent) error
+	UpdateIntegrationRequestData(i *Integration) error
+	IterateIntegrationsOrdered(iter func(integration *Integration, err error)) error
+	InsertWebStatsPerformance(sessionID uint64, p *messages.PerformanceTrackAggr) error
+	InsertWebStatsResourceEvent(sessionID uint64, e *messages.ResourceEvent) error
+	Close() error
+	//GetSession(sessionID uint64) (*types.Session, error)
+	Commit()
+}
+
 // Conn contains batches, bulks and cache for all sessions
-type Conn struct {
+type dbImpl struct {
 	c                 Pool
+	cacher            cache.Cache
 	batches           map[uint64]*pgx.Batch
 	batchSizes        map[uint64]int
 	rawBatches        map[uint64][]*batchItem
@@ -45,20 +75,17 @@ type Conn struct {
 	chConn            CH
 }
 
-func (conn *Conn) SetClickHouse(ch CH) {
+func (conn *dbImpl) SetClickHouse(ch CH) {
 	conn.chConn = ch
 }
 
-func NewConn(url string, queueLimit, sizeLimit int, metrics *monitoring.Metrics) *Conn {
+func NewConn(pool Pool, cacher cache.Cache, queueLimit, sizeLimit int, metrics *monitoring.Metrics) DB {
 	if metrics == nil {
 		log.Fatalf("metrics is nil")
 	}
-	c, err := pgxpool.Connect(context.Background(), url)
-	if err != nil {
-		log.Println(err)
-		log.Fatalln("pgxpool.Connect Error")
-	}
-	conn := &Conn{
+	conn := &dbImpl{
+		c:               pool,
+		cacher:          cacher,
 		batches:         make(map[uint64]*pgx.Batch),
 		batchSizes:      make(map[uint64]int),
 		rawBatches:      make(map[uint64][]*batchItem),
@@ -67,20 +94,16 @@ func NewConn(url string, queueLimit, sizeLimit int, metrics *monitoring.Metrics)
 		batchSizeLimit:  sizeLimit,
 	}
 	conn.initMetrics(metrics)
-	conn.c, err = NewPool(c, conn.sqlRequestTime, conn.sqlRequestCounter)
-	if err != nil {
-		log.Fatalf("can't create new pool wrapper: %s", err)
-	}
 	conn.initBulks()
 	return conn
 }
 
-func (conn *Conn) Close() error {
+func (conn *dbImpl) Close() error {
 	conn.c.Close()
 	return nil
 }
 
-func (conn *Conn) initMetrics(metrics *monitoring.Metrics) {
+func (conn *dbImpl) initMetrics(metrics *monitoring.Metrics) {
 	var err error
 	conn.batchSizeBytes, err = metrics.RegisterHistogram("batch_size_bytes")
 	if err != nil {
@@ -100,7 +123,7 @@ func (conn *Conn) initMetrics(metrics *monitoring.Metrics) {
 	}
 }
 
-func (conn *Conn) initBulks() {
+func (conn *dbImpl) initBulks() {
 	var err error
 	conn.autocompletes, err = NewBulk(conn.c,
 		"autocomplete",
@@ -155,7 +178,7 @@ func (conn *Conn) initBulks() {
 	}
 }
 
-func (conn *Conn) insertAutocompleteValue(sessionID uint64, projectID uint32, tp string, value string) {
+func (conn *dbImpl) insertAutocompleteValue(sessionID uint64, projectID uint32, tp string, value string) {
 	if len(value) == 0 {
 		return
 	}
@@ -171,7 +194,7 @@ func (conn *Conn) insertAutocompleteValue(sessionID uint64, projectID uint32, tp
 	}
 }
 
-func (conn *Conn) batchQueue(sessionID uint64, sql string, args ...interface{}) {
+func (conn *dbImpl) batchQueue(sessionID uint64, sql string, args ...interface{}) {
 	batch, ok := conn.batches[sessionID]
 	if !ok {
 		conn.batches[sessionID] = &pgx.Batch{}
@@ -182,7 +205,7 @@ func (conn *Conn) batchQueue(sessionID uint64, sql string, args ...interface{}) 
 	conn.rawBatch(sessionID, sql, args...)
 }
 
-func (conn *Conn) rawBatch(sessionID uint64, sql string, args ...interface{}) {
+func (conn *dbImpl) rawBatch(sessionID uint64, sql string, args ...interface{}) {
 	// Temp raw batch store
 	raw := conn.rawBatches[sessionID]
 	raw = append(raw, &batchItem{
@@ -192,14 +215,14 @@ func (conn *Conn) rawBatch(sessionID uint64, sql string, args ...interface{}) {
 	conn.rawBatches[sessionID] = raw
 }
 
-func (conn *Conn) updateSessionEvents(sessionID uint64, events, pages int) {
+func (conn *dbImpl) updateSessionEvents(sessionID uint64, events, pages int) {
 	if _, ok := conn.sessionUpdates[sessionID]; !ok {
 		conn.sessionUpdates[sessionID] = NewSessionUpdates(sessionID)
 	}
 	conn.sessionUpdates[sessionID].add(pages, events)
 }
 
-func (conn *Conn) sendBulks() {
+func (conn *dbImpl) sendBulks() {
 	if err := conn.autocompletes.Send(); err != nil {
 		log.Printf("autocomplete bulk send err: %s", err)
 	}
@@ -220,7 +243,7 @@ func (conn *Conn) sendBulks() {
 	}
 }
 
-func (conn *Conn) CommitBatches() {
+func (conn *dbImpl) Commit() {
 	conn.sendBulks()
 	for sessID, b := range conn.batches {
 		// Append session update sql request to the end of batch
@@ -276,7 +299,7 @@ func (conn *Conn) CommitBatches() {
 	conn.sessionUpdates = make(map[uint64]*sessionUpdates)
 }
 
-func (conn *Conn) updateBatchSize(sessionID uint64, reqSize int) {
+func (conn *dbImpl) updateBatchSize(sessionID uint64, reqSize int) {
 	conn.batchSizes[sessionID] += reqSize
 	if conn.batchSizes[sessionID] >= conn.batchSizeLimit || conn.batches[sessionID].Len() >= conn.batchQueueLimit {
 		conn.commitBatch(sessionID)
@@ -284,7 +307,7 @@ func (conn *Conn) updateBatchSize(sessionID uint64, reqSize int) {
 }
 
 // Send only one batch to pg
-func (conn *Conn) commitBatch(sessionID uint64) {
+func (conn *dbImpl) commitBatch(sessionID uint64) {
 	b, ok := conn.batches[sessionID]
 	if !ok {
 		log.Printf("can't find batch for session: %d", sessionID)

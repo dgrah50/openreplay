@@ -5,12 +5,7 @@ import (
 	"openreplay/backend/pkg/url"
 )
 
-func (conn *Conn) InsertWebStatsLongtask(sessionID uint64, l *LongTask) error {
-	return nil // Do we even use them?
-	// conn.exec(``);
-}
-
-func (conn *Conn) InsertWebStatsPerformance(sessionID uint64, p *PerformanceTrackAggr) error {
+func (conn *dbImpl) InsertWebStatsPerformance(sessionID uint64, p *PerformanceTrackAggr) error {
 	timestamp := (p.TimestampEnd + p.TimestampStart) / 2
 
 	sqlRequest := `
@@ -40,7 +35,7 @@ func (conn *Conn) InsertWebStatsPerformance(sessionID uint64, p *PerformanceTrac
 	return nil
 }
 
-func (conn *Conn) InsertWebStatsResourceEvent(sessionID uint64, e *ResourceEvent) error {
+func (conn *dbImpl) InsertWebStatsResourceEvent(sessionID uint64, e *ResourceEvent) error {
 	host, _, _, err := url.GetURLParts(e.URL)
 	if err != nil {
 		return err
