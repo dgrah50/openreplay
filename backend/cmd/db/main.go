@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	"openreplay/backend/pkg/queue/types"
@@ -25,28 +24,26 @@ import (
 )
 
 func main() {
-	metrics := monitoring.New("db")
-
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Llongfile)
-
+	metrics := monitoring.New("db")
 	cfg := db.New()
 
-	// 1. Create pool of connections to DB (postgres)
+	// Create pool of connections to DB (postgres)
 	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
 	if err != nil {
 		log.Fatalf("pgxpool.Connect err: %s", err)
 	}
-	// 2. Create pool wrapper
+	// Create pool wrapper
 	connWrapper, err := postgres.NewPool(conn, metrics)
 	if err != nil {
 		log.Fatalf("can't create new pool wrapper: %s", err)
 	}
-	// 3. Create cache level for projects and sessions
+	// Create cache level for projects and sessions
 	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
 	}
-	// 4. Create db layer with all necessary methods
+	// Create db layer with all necessary methods
 	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
 
 	// HandlersFabric returns the list of message handlers we want to be applied to each incoming message.
@@ -72,7 +69,7 @@ func main() {
 	}
 
 	// Init modules
-	saver := datasaver.New(dbService, producer)
+	saver := datasaver.New(dbService, cacheService, producer)
 	saver.InitStats()
 	statsLogger := logger.NewQueueStats(cfg.LoggerTimeout)
 
@@ -94,18 +91,10 @@ func main() {
 				return
 			}
 
-			session, err := cacheService.GetSession(sessionID)
-			if session == nil {
-				if err != nil && !errors.Is(err, cache.NilSessionInCacheError) {
-					log.Printf("Error on session retrieving from cache: %v, SessionID: %v, Message: %v", err, sessionID, msg)
-				}
-				return
-			}
-
 			// Save statistics to db
-			err = saver.InsertStats(session, msg)
+			err = saver.InsertStats(sessionID, msg)
 			if err != nil {
-				log.Printf("Stats Insertion Error %v; Session: %v, Message: %v", err, session, msg)
+				log.Printf("Stats Insertion Error %v; SessionID: %d, Message: %v", err, sessionID, msg)
 			}
 
 			// Handle heuristics and save to temporary queue in memory
@@ -115,13 +104,13 @@ func main() {
 			builderMap.IterateSessionReadyMessages(sessionID, func(msg messages.Message) {
 				if err := saver.InsertMessage(sessionID, msg); err != nil {
 					if !postgres.IsPkeyViolation(err) {
-						log.Printf("Message Insertion Error %v; Session: %v,  Message %v", err, session, msg)
+						log.Printf("Message Insertion Error %v; SessionID: %d,  Message %v", err, sessionID, msg)
 					}
 					return
 				}
 
-				if err := saver.InsertStats(session, msg); err != nil {
-					log.Printf("Stats Insertion Error %v; Session: %v,  Message %v", err, session, msg)
+				if err := saver.InsertStats(sessionID, msg); err != nil {
+					log.Printf("Stats Insertion Error %v; SessionID: %d,  Message %v", err, sessionID, msg)
 				}
 			})
 		}

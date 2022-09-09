@@ -21,33 +21,28 @@ import (
 	"openreplay/backend/pkg/token"
 )
 
-//
 func main() {
-	metrics := monitoring.New("integrations")
-
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Llongfile)
-
+	metrics := monitoring.New("integrations")
 	cfg := config.New()
 
-	// 1. Create pool of connections to DB (postgres)
+	// Create pool of connections to DB (postgres)
 	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
 	if err != nil {
 		log.Fatalf("pgxpool.Connect err: %s", err)
 	}
-	// 2. Create pool wrapper
+	// Create pool wrapper
 	connWrapper, err := postgres.NewPool(conn, metrics)
 	if err != nil {
 		log.Fatalf("can't create new pool wrapper: %s", err)
 	}
-	// 3. Create cache level for projects and sessions
+	// Create cache level for projects and sessions
 	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
 	}
-	// 4. Create db layer with all necessary methods
+	// Create db layer with all necessary methods
 	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
-	//pg := postgres.NewConn(cfg.PostgresURI, 0, 0, metrics)
-	//defer pg.Close()
 
 	tokenizer := token.NewTokenizer(cfg.TokenSecret)
 

@@ -19,38 +19,32 @@ import (
 )
 
 func main() {
-	metrics := monitoring.New("http")
-
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Llongfile)
-
+	metrics := monitoring.New("http")
 	cfg := http.New()
 
 	// Connect to queue
 	producer := queue.NewProducer(cfg.MessageSizeLimit, true)
 	defer producer.Close(15000)
 
-	// 1. Create pool of connections to DB (postgres)
+	// Create pool of connections to DB (postgres)
 	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
 	if err != nil {
 		log.Fatalf("pgxpool.Connect err: %s", err)
 	}
-	// 2. Create pool wrapper
+	// Create pool wrapper
 	connWrapper, err := postgres.NewPool(conn, metrics)
 	if err != nil {
 		log.Fatalf("can't create new pool wrapper: %s", err)
 	}
-	// 3. Create cache level for projects and sessions
+	// Create cache level for projects and sessions
 	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
 	}
-	// 4. Create db layer with all necessary methods
-	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
-	//dbConn := cache.NewPGCache(postgres.NewConn(cfg.Postgres, 0, 0, metrics), 1000*60*20)
-	//defer dbConn.Close()
 
 	// Build all services
-	services := services.New(cfg, producer, dbService)
+	services := services.New(cfg, producer, cacheService)
 
 	// Init server's routes
 	router, err := router.NewRouter(cfg, services, metrics)

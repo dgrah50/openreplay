@@ -25,31 +25,35 @@ type batchItem struct {
 }
 
 type DB interface {
-	//InsertSessionEnd(sessionID uint64, timestamp uint64) (uint64, error)
-	//HandleSessionEnd(sessionID uint64) error
-	InsertIssueEvent(sessionID uint64, crash *messages.IssueEvent) error
-	InsertMetadata(sessionID uint64, metadata *messages.Metadata) error
-	InsertWebSessionStart(sessionID uint64, s *messages.SessionStart) error
-	HandleWebSessionStart(sessionID uint64, s *messages.SessionStart) error
-	InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) error
-	HandleWebSessionEnd(sessionID uint64, e *messages.SessionEnd) error
-	InsertWebErrorEvent(sessionID uint64, e *messages.ErrorEvent) error
+	// Sessions
 	InsertSessionReferrer(sessionID uint64, referrer string) error
+	HandleWebSessionStart(sessionID uint64, s *messages.SessionStart) error
+	HandleWebSessionEnd(sessionID uint64, e *messages.SessionEnd) error
+
+	// Sessions data
+	InsertWebUserID(sessionID uint64, userID *messages.UserID) error
+	InsertWebUserAnonymousID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error
+
+	// Events
+	InsertIssueEvent(sessionID uint64, crash *messages.IssueEvent) error
+	InsertWebErrorEvent(sessionID uint64, e *messages.ErrorEvent) error
 	InsertWebFetchEvent(sessionID uint64, e *messages.FetchEvent) error
 	InsertWebGraphQLEvent(sessionID uint64, e *messages.GraphQLEvent) error
 	InsertWebCustomEvent(sessionID uint64, e *messages.CustomEvent) error
-	InsertWebUserID(sessionID uint64, userID *messages.UserID) error
-	InsertWebUserAnonymousID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error
 	InsertWebPageEvent(sessionID uint64, e *messages.PageEvent) error
 	InsertWebClickEvent(sessionID uint64, e *messages.ClickEvent) error
 	InsertWebInputEvent(sessionID uint64, e *messages.InputEvent) error
+
+	// Integrations
 	UpdateIntegrationRequestData(i *Integration) error
 	IterateIntegrationsOrdered(iter func(integration *Integration, err error)) error
+
+	// Stats
 	InsertWebStatsPerformance(sessionID uint64, p *messages.PerformanceTrackAggr) error
 	InsertWebStatsResourceEvent(sessionID uint64, e *messages.ResourceEvent) error
-	Close() error
-	//GetSession(sessionID uint64) (*types.Session, error)
+
 	Commit()
+	Close() error
 }
 
 // Conn contains batches, bulks and cache for all sessions

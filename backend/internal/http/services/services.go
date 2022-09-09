@@ -4,7 +4,7 @@ import (
 	"openreplay/backend/internal/config/http"
 	"openreplay/backend/internal/http/geoip"
 	"openreplay/backend/internal/http/uaparser"
-	"openreplay/backend/pkg/db/postgres"
+	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/flakeid"
 	"openreplay/backend/pkg/queue/types"
 	"openreplay/backend/pkg/storage"
@@ -12,7 +12,7 @@ import (
 )
 
 type ServicesBuilder struct {
-	Database  postgres.DB
+	Database  cache.Cache
 	Producer  types.Producer
 	Flaker    *flakeid.Flaker
 	UaParser  *uaparser.UAParser
@@ -21,7 +21,7 @@ type ServicesBuilder struct {
 	Storage   *storage.S3
 }
 
-func New(cfg *http.Config, producer types.Producer, pgconn postgres.DB) *ServicesBuilder {
+func New(cfg *http.Config, producer types.Producer, pgconn cache.Cache) *ServicesBuilder {
 	return &ServicesBuilder{
 		Database:  pgconn,
 		Producer:  producer,

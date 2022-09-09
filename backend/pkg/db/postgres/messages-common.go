@@ -1,15 +1,11 @@
 package postgres
 
 import (
-	"errors"
 	"fmt"
 	"log"
-	"strings"
-	"time"
-
-	"openreplay/backend/pkg/db/types"
 	"openreplay/backend/pkg/hashid"
 	"openreplay/backend/pkg/messages"
+	"strings"
 )
 
 func getAutocompleteType(baseType string, platform string) string {
@@ -20,127 +16,16 @@ func getAutocompleteType(baseType string, platform string) string {
 
 }
 
-func (conn *dbImpl) InsertWebSessionStart(sessionID uint64, s *messages.SessionStart) error {
-	return conn.insertSessionStart(sessionID, &types.Session{
-		SessionID:      sessionID,
-		Platform:       "web",
-		Timestamp:      s.Timestamp,
-		ProjectID:      uint32(s.ProjectID),
-		TrackerVersion: s.TrackerVersion,
-		RevID:          s.RevID,
-		UserUUID:       s.UserUUID,
-		UserOS:         s.UserOS,
-		UserOSVersion:  s.UserOSVersion,
-		UserDevice:     s.UserDevice,
-		UserCountry:    s.UserCountry,
-		// web properties (TODO: unite different platform types)
-		UserAgent:            s.UserAgent,
-		UserBrowser:          s.UserBrowser,
-		UserBrowserVersion:   s.UserBrowserVersion,
-		UserDeviceType:       s.UserDeviceType,
-		UserDeviceMemorySize: s.UserDeviceMemorySize,
-		UserDeviceHeapSize:   s.UserDeviceHeapSize,
-		UserID:               &s.UserID,
-	})
-}
-
-func (conn *dbImpl) insertSessionStart(sessionID uint64, s *types.Session) error {
-	return conn.c.Exec(`
-		INSERT INTO sessions (
-			session_id, project_id, start_ts,
-			user_uuid, user_device, user_device_type, user_country,
-			user_os, user_os_version,
-			rev_id, 
-			tracker_version, issue_score,
-			platform,
-			user_agent, user_browser, user_browser_version, user_device_memory_size, user_device_heap_size,
-			user_id
-		) VALUES (
-			$1, $2, $3,
-			$4, $5, $6, $7, 
-			$8, NULLIF($9, ''),
-			NULLIF($10, ''), 
-			$11, $12,
-			$13,
-			NULLIF($14, ''), NULLIF($15, ''), NULLIF($16, ''), NULLIF($17, 0), NULLIF($18, 0::bigint),
-			NULLIF($19, '')
-		)`,
-		sessionID, s.ProjectID, s.Timestamp,
-		s.UserUUID, s.UserDevice, s.UserDeviceType, s.UserCountry,
-		s.UserOS, s.UserOSVersion,
-		s.RevID,
-		s.TrackerVersion, s.Timestamp/1000,
-		s.Platform,
-		s.UserAgent, s.UserBrowser, s.UserBrowserVersion, s.UserDeviceMemorySize, s.UserDeviceHeapSize,
-		s.UserID,
-	)
-}
-
-func (conn *dbImpl) HandleWebSessionStart(sessionID uint64, s *messages.SessionStart) error {
-	if conn.cacher.HasSession(sessionID) {
-		return errors.New("this session already in cache")
+func (conn *dbImpl) HandleWebSessionStart(sessionID uint64, sess *messages.SessionStart) error {
+	s, err := conn.cacher.HandleSessionStart(sessionID, sess)
+	if err != nil {
+		return err
 	}
-	newSession := &types.Session{
-		SessionID:      sessionID,
-		Platform:       "web",
-		Timestamp:      s.Timestamp,
-		ProjectID:      uint32(s.ProjectID),
-		TrackerVersion: s.TrackerVersion,
-		RevID:          s.RevID,
-		UserUUID:       s.UserUUID,
-		UserOS:         s.UserOS,
-		UserOSVersion:  s.UserOSVersion,
-		UserDevice:     s.UserDevice,
-		UserCountry:    s.UserCountry,
-		// web properties (TODO: unite different platform types)
-		UserAgent:            s.UserAgent,
-		UserBrowser:          s.UserBrowser,
-		UserBrowserVersion:   s.UserBrowserVersion,
-		UserDeviceType:       s.UserDeviceType,
-		UserDeviceMemorySize: s.UserDeviceMemorySize,
-		UserDeviceHeapSize:   s.UserDeviceHeapSize,
-		UserID:               &s.UserID,
-	}
-	conn.cacher.AddSession(newSession)
-	conn.handleSessionStart(sessionID, newSession)
-	return nil
-}
-
-func (conn *dbImpl) handleSessionStart(sessionID uint64, s *types.Session) {
 	conn.insertAutocompleteValue(sessionID, s.ProjectID, getAutocompleteType("USEROS", s.Platform), s.UserOS)
 	conn.insertAutocompleteValue(sessionID, s.ProjectID, getAutocompleteType("USERDEVICE", s.Platform), s.UserDevice)
 	conn.insertAutocompleteValue(sessionID, s.ProjectID, getAutocompleteType("USERCOUNTRY", s.Platform), s.UserCountry)
 	conn.insertAutocompleteValue(sessionID, s.ProjectID, getAutocompleteType("REVID", s.Platform), s.RevID)
 	conn.insertAutocompleteValue(sessionID, s.ProjectID, "USERBROWSER", s.UserBrowser)
-}
-
-func (conn *dbImpl) GetSessionDuration(sessionID uint64) (uint64, error) {
-	var dur uint64
-	if err := conn.c.QueryRow("SELECT COALESCE( duration, 0 ) FROM sessions WHERE session_id=$1", sessionID).Scan(&dur); err != nil {
-		return 0, err
-	}
-	return dur, nil
-}
-
-func (conn *dbImpl) InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) error {
-	currDuration, err := conn.GetSessionDuration(sessionID)
-	if err != nil {
-		log.Printf("getSessionDuration failed, sessID: %d, err: %s", sessionID, err)
-	}
-	var newDuration uint64
-	if err := conn.c.QueryRow(`
-		UPDATE sessions SET duration=$2 - start_ts
-		WHERE session_id=$1
-		RETURNING duration
-	`,
-		sessionID, e.Timestamp,
-	).Scan(&newDuration); err != nil {
-		return err
-	}
-	if currDuration == newDuration {
-		return fmt.Errorf("sessionEnd duplicate, sessID: %d, prevDur: %d, newDur: %d", sessionID,
-			currDuration, newDuration)
-	}
 	return nil
 }
 
@@ -199,42 +84,6 @@ func (conn *dbImpl) InsertUserAnonymousID(sessionID uint64, userAnonymousID stri
 	// Record approximate message size
 	conn.updateBatchSize(sessionID, len(sqlRequest)+len(userAnonymousID)+8)
 	return nil
-}
-
-func (conn *dbImpl) InsertMetadata(sessionID uint64, metadata *messages.Metadata) error {
-	session, err := conn.cacher.GetSession(sessionID)
-	if err != nil {
-		return err
-	}
-	project, err := conn.cacher.GetProject(session.ProjectID)
-	if err != nil {
-		return err
-	}
-
-	keyNo := project.GetMetadataNo(metadata.Key)
-
-	if keyNo == 0 {
-		// TODO: insert project metadata
-		return nil
-	}
-	if err := conn.insertMetadata(sessionID, keyNo, metadata.Value); err != nil {
-		// Try to insert metadata after one minute
-		time.AfterFunc(time.Minute, func() {
-			if err := conn.insertMetadata(sessionID, keyNo, metadata.Value); err != nil {
-				log.Printf("metadata retry err: %s", err)
-			}
-		})
-		return err
-	}
-	session.SetMetadata(keyNo, metadata.Value)
-	return nil
-}
-
-func (conn *dbImpl) insertMetadata(sessionID uint64, keyNo uint, value string) error {
-	sqlRequest := `
-		UPDATE sessions SET  metadata_%v = $1
-		WHERE session_id = $2`
-	return conn.c.Exec(fmt.Sprintf(sqlRequest, keyNo), value, sessionID)
 }
 
 func (conn *dbImpl) InsertIssueEvent(sessionID uint64, e *messages.IssueEvent) (err error) {

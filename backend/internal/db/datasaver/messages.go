@@ -9,7 +9,7 @@ func (mi *Saver) InsertMessage(sessionID uint64, msg Message) error {
 	switch m := msg.(type) {
 	// Common
 	case *Metadata:
-		if err := mi.pg.InsertMetadata(sessionID, m); err != nil {
+		if err := mi.cacher.InsertMetadata(sessionID, m); err != nil {
 			return fmt.Errorf("insert metadata err: %s", err)
 		}
 		return nil

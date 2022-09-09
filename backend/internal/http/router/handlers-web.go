@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"openreplay/backend/internal/http/uuid"
+	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/flakeid"
 	"strconv"
 	"time"
@@ -120,7 +121,7 @@ func (e *Router) startSessionHandlerWeb(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Save sessionStart to db
-		if err := e.services.Database.InsertWebSessionStart(sessionID, sessionStart); err != nil {
+		if err := e.services.Database.InsertSession(sessionID, sessionStart); err != nil {
 			log.Printf("can't insert session start: %s", err)
 		}
 
@@ -204,7 +205,7 @@ func (e *Router) notStartedHandlerWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	country := e.services.GeoIP.ExtractISOCodeFromHTTPRequest(r)
-	err = e.services.Database.InsertUnstartedSession(postgres.UnstartedSession{
+	err = e.services.Database.InsertUnstartedSession(cache.UnstartedSession{
 		ProjectKey:         *req.ProjectKey,
 		TrackerVersion:     req.TrackerVersion,
 		DoNotTrack:         req.DoNotTrack,
