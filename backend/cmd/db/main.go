@@ -20,7 +20,7 @@ import (
 	"openreplay/backend/pkg/messages"
 	"openreplay/backend/pkg/monitoring"
 	"openreplay/backend/pkg/queue"
-	"openreplay/backend/pkg/sessions"
+	"openreplay/backend/pkg/sessions-builder"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't create new pool wrapper: %s", err)
 	}
-	// Create cache level for projects and sessions
+	// Create cache level for projects and sessions-builder
 	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Create handler's aggregator
-	builderMap := sessions.NewBuilderMap(handlersFabric)
+	builderMap := sessions_builder.NewBuilderMap(handlersFabric)
 
 	keepMessage := func(tp int) bool {
 		return tp == messages.MsgMetadata || tp == messages.MsgIssueEvent || tp == messages.MsgSessionStart || tp == messages.MsgSessionEnd || tp == messages.MsgUserID || tp == messages.MsgUserAnonymousID || tp == messages.MsgCustomEvent || tp == messages.MsgClickEvent || tp == messages.MsgInputEvent || tp == messages.MsgPageEvent || tp == messages.MsgErrorEvent || tp == messages.MsgFetchEvent || tp == messages.MsgGraphQLEvent || tp == messages.MsgIntegrationEvent || tp == messages.MsgPerformanceTrackAggr || tp == messages.MsgResourceEvent || tp == messages.MsgLongTask || tp == messages.MsgJSException || tp == messages.MsgResourceTiming || tp == messages.MsgRawCustomEvent || tp == messages.MsgCustomIssue || tp == messages.MsgFetch || tp == messages.MsgGraphQL || tp == messages.MsgStateAction || tp == messages.MsgSetInputTarget || tp == messages.MsgSetInputValue || tp == messages.MsgCreateDocument || tp == messages.MsgMouseClick || tp == messages.MsgSetPageLocation || tp == messages.MsgPageLoadTiming || tp == messages.MsgPageRenderTiming

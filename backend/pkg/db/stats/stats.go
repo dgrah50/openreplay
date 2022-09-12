@@ -1,11 +1,34 @@
-package postgres
+package stats
 
 import (
-	. "openreplay/backend/pkg/messages"
+	"fmt"
+	"openreplay/backend/pkg/db/batch"
+	"openreplay/backend/pkg/db/postgres"
+	"openreplay/backend/pkg/messages"
 	"openreplay/backend/pkg/url"
 )
 
-func (conn *dbImpl) InsertWebStatsPerformance(sessionID uint64, p *PerformanceTrackAggr) error {
+type Stats interface {
+	InsertWebStatsPerformance(sessionID uint64, p *messages.PerformanceTrackAggr) error
+	InsertWebStatsResourceEvent(sessionID uint64, e *messages.ResourceEvent) error
+}
+
+type statsImpl struct {
+	conn    postgres.Pool
+	batches batch.Batches
+}
+
+func New(conn postgres.Pool, batches batch.Batches) (Stats, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("db connection is empty")
+	}
+	return &statsImpl{
+		conn:    conn,
+		batches: batches,
+	}, nil
+}
+
+func (s *statsImpl) InsertWebStatsPerformance(sessionID uint64, p *messages.PerformanceTrackAggr) error {
 	timestamp := (p.TimestampEnd + p.TimestampStart) / 2
 
 	sqlRequest := `
@@ -22,7 +45,7 @@ func (conn *dbImpl) InsertWebStatsPerformance(sessionID uint64, p *PerformanceTr
 			$10, $11, $12,
 			$13, $14, $15
 		)`
-	conn.batchQueue(sessionID, sqlRequest,
+	s.batches.Queue(sessionID, sqlRequest,
 		sessionID, timestamp, timestamp, // ??? TODO: primary key by timestamp+session_id
 		p.MinFPS, p.AvgFPS, p.MaxFPS,
 		p.MinCPU, p.AvgCPU, p.MinCPU,
@@ -31,11 +54,11 @@ func (conn *dbImpl) InsertWebStatsPerformance(sessionID uint64, p *PerformanceTr
 	)
 
 	// Record approximate message size
-	conn.updateBatchSize(sessionID, len(sqlRequest)+8*15)
+	s.batches.UpdateSize(sessionID, len(sqlRequest)+8*15)
 	return nil
 }
 
-func (conn *dbImpl) InsertWebStatsResourceEvent(sessionID uint64, e *ResourceEvent) error {
+func (s *statsImpl) InsertWebStatsResourceEvent(sessionID uint64, e *messages.ResourceEvent) error {
 	host, _, _, err := url.GetURLParts(e.URL)
 	if err != nil {
 		return err
@@ -59,7 +82,7 @@ func (conn *dbImpl) InsertWebStatsResourceEvent(sessionID uint64, e *ResourceEve
 		)`
 	urlQuery := url.DiscardURLQuery(e.URL)
 	urlMethod := url.EnsureMethod(e.Method)
-	conn.batchQueue(sessionID, sqlRequest,
+	s.batches.Queue(sessionID, sqlRequest,
 		sessionID, e.Timestamp, e.MessageID,
 		e.Type,
 		e.URL, host, urlQuery,
@@ -69,6 +92,6 @@ func (conn *dbImpl) InsertWebStatsResourceEvent(sessionID uint64, e *ResourceEve
 	)
 
 	// Record approximate message size
-	conn.updateBatchSize(sessionID, len(sqlRequest)+len(e.Type)+len(e.URL)+len(host)+len(urlQuery)+len(urlMethod)+8*9+1)
+	s.batches.UpdateSize(sessionID, len(sqlRequest)+len(e.Type)+len(e.URL)+len(host)+len(urlQuery)+len(urlMethod)+8*9+1)
 	return nil
 }

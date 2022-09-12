@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// EndedSessionHandler handler for ended sessions
+// EndedSessionHandler handler for ended sessions-builder
 type EndedSessionHandler func(sessionID uint64, timestamp int64) bool
 
 // session holds information about user's session live status
@@ -51,7 +51,7 @@ func New(metrics *monitoring.Metrics, timeout int64, parts int) (*SessionEnder, 
 	}, nil
 }
 
-// UpdateSession save timestamp for new sessions and update for existing sessions
+// UpdateSession save timestamp for new sessions-builder and update for existing sessions-builder
 func (se *SessionEnder) UpdateSession(sessionID uint64, timestamp, msgTimestamp int64) {
 	localTS := time.Now().UnixMilli()
 	currTS := timestamp
@@ -101,5 +101,5 @@ func (se *SessionEnder) HandleEndedSessions(handler EndedSessionHandler) {
 			}
 		}
 	}
-	log.Printf("Removed %d of %d sessions", removedSessions, allSessions)
+	log.Printf("Removed %d of %d sessions-builder", removedSessions, allSessions)
 }

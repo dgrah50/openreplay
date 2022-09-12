@@ -47,7 +47,7 @@ func (c *cacheImpl) getSession(sessionID uint64) (*Session, error) {
 			user_browser, user_browser_version, issue_score,
 			metadata_1, metadata_2, metadata_3, metadata_4, metadata_5,
 			metadata_6, metadata_7, metadata_8, metadata_9, metadata_10
-		FROM sessions
+		FROM sessions-builder
 		WHERE session_id=$1 
 	`,
 		sessionID,

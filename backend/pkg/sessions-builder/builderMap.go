@@ -1,4 +1,4 @@
-package sessions
+package sessions_builder
 
 import (
 	"openreplay/backend/pkg/handlers"

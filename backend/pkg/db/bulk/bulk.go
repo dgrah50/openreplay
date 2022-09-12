@@ -1,9 +1,10 @@
-package postgres
+package bulk
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	"openreplay/backend/pkg/db/postgres"
 )
 
 const (
@@ -18,7 +19,7 @@ type Bulk interface {
 }
 
 type bulkImpl struct {
-	conn      Pool
+	conn      postgres.Pool
 	table     string
 	columns   string
 	template  string
@@ -66,7 +67,7 @@ func (b *bulkImpl) send() error {
 	return nil
 }
 
-func NewBulk(conn Pool, table, columns, template string, setSize, sizeLimit int) (Bulk, error) {
+func NewBulk(conn postgres.Pool, table, columns, template string, setSize, sizeLimit int) (Bulk, error) {
 	switch {
 	case conn == nil:
 		return nil, errors.New("db conn is empty")

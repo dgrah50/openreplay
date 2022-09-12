@@ -13,7 +13,7 @@ func (si *Saver) InitStats() {
 }
 
 func (si *Saver) InsertStats(sessionID uint64, msg Message) error {
-	session, err := si.cacher.GetSession(sessionID)
+	session, err := si.cache.GetSession(sessionID)
 	if session == nil {
 		if err != nil && !errors.Is(err, cache.NilSessionInCacheError) {
 			log.Printf("Error on session retrieving from cache: %v, SessionID: %v, Message: %v", err, sessionID, msg)
@@ -23,9 +23,9 @@ func (si *Saver) InsertStats(sessionID uint64, msg Message) error {
 	switch m := msg.(type) {
 	// Web
 	case *PerformanceTrackAggr:
-		return si.pg.InsertWebStatsPerformance(session.SessionID, m)
+		return si.stats.InsertWebStatsPerformance(session.SessionID, m)
 	case *ResourceEvent:
-		return si.pg.InsertWebStatsResourceEvent(session.SessionID, m)
+		return si.stats.InsertWebStatsResourceEvent(session.SessionID, m)
 	}
 	return nil
 }

@@ -6,7 +6,7 @@ import (
 	"log"
 	config "openreplay/backend/internal/config/integrations"
 	"openreplay/backend/internal/integrations/clientManager"
-	"openreplay/backend/pkg/db/cache"
+	integrations2 "openreplay/backend/pkg/db/integrations"
 	"openreplay/backend/pkg/monitoring"
 	"time"
 
@@ -36,19 +36,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't create new pool wrapper: %s", err)
 	}
-	// Create cache level for projects and sessions
-	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
+
+	dbService, err := integrations2.New(connWrapper)
 	if err != nil {
-		log.Fatalf("can't create cacher, err: %s", err)
+		log.Fatalf("can't init integrations")
 	}
-	// Create db layer with all necessary methods
-	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
 
 	tokenizer := token.NewTokenizer(cfg.TokenSecret)
 
 	manager := clientManager.NewManager()
 
-	dbService.IterateIntegrationsOrdered(func(i *postgres.Integration, err error) {
+	dbService.IterateIntegrationsOrdered(func(i *integrations2.Integration, err error) {
 		if err != nil {
 			log.Printf("Postgres error: %v\n", err)
 			return
@@ -65,7 +63,7 @@ func main() {
 	defer producer.Close(15000)
 
 	// TODO: check it
-	listener, err := postgres.NewIntegrationsListener(cfg.Postgres)
+	listener, err := integrations2.NewIntegrationsListener(cfg.Postgres)
 	if err != nil {
 		log.Printf("Postgres listener error: %v\n", err)
 		log.Fatalf("Postgres listener error")

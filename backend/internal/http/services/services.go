@@ -12,7 +12,7 @@ import (
 )
 
 type ServicesBuilder struct {
-	Database  cache.Cache
+	Database  cache.Sessions
 	Producer  types.Producer
 	Flaker    *flakeid.Flaker
 	UaParser  *uaparser.UAParser
@@ -21,7 +21,7 @@ type ServicesBuilder struct {
 	Storage   *storage.S3
 }
 
-func New(cfg *http.Config, producer types.Producer, pgconn cache.Cache) *ServicesBuilder {
+func New(cfg *http.Config, producer types.Producer, pgconn cache.Sessions) *ServicesBuilder {
 	return &ServicesBuilder{
 		Database:  pgconn,
 		Producer:  producer,

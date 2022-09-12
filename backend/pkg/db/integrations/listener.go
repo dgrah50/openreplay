@@ -1,10 +1,9 @@
-package postgres
+package integrations
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"github.com/jackc/pgx/v4"
 )
 

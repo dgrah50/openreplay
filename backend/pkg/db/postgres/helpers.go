@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"math"
 	"openreplay/backend/pkg/messages"
 )
 
@@ -32,4 +33,9 @@ func calcResponseTime(pe *messages.PageEvent) uint64 {
 		return pe.ResponseEnd - pe.ResponseStart
 	}
 	return 0
+}
+
+// TODO: change messages and replace everywhere to e.Index
+func getSqIdx(messageID uint64) uint {
+	return uint(messageID % math.MaxInt32)
 }

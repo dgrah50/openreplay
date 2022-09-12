@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type Cache interface {
+type Sessions interface {
 	AddSession(session *types.Session)
 	HandleSessionStart(sessionID uint64, s *messages.SessionStart) (*types.Session, error)
 	InsertSession(sessionID uint64, s *messages.SessionStart) error
@@ -23,6 +23,23 @@ type Cache interface {
 	InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) error
 	InsertUnstartedSession(s *UnstartedSession) error
 	InsertMetadata(sessionID uint64, metadata *messages.Metadata) error
+}
+
+type cacheImpl struct {
+	conn                     postgres.Pool
+	sessions                 map[uint64]*types.Session //remove by timeout to avoid memory leak
+	projects                 map[uint32]*ProjectMeta
+	projectsByKeys           sync.Map
+	projectExpirationTimeout time.Duration
+}
+
+func New(pgConn postgres.Pool, projectExpirationTimeoutMs int64) (Sessions, error) {
+	return &cacheImpl{
+		conn:                     pgConn,
+		sessions:                 make(map[uint64]*types.Session),
+		projects:                 make(map[uint32]*ProjectMeta),
+		projectExpirationTimeout: time.Duration(1000 * projectExpirationTimeoutMs),
+	}, nil
 }
 
 func (c *cacheImpl) InsertMetadata(sessionID uint64, metadata *messages.Metadata) error {
@@ -56,7 +73,7 @@ func (c *cacheImpl) InsertMetadata(sessionID uint64, metadata *messages.Metadata
 
 func (c *cacheImpl) insertMetadata(sessionID uint64, keyNo uint, value string) error {
 	sqlRequest := `
-		UPDATE sessions SET  metadata_%v = $1
+		UPDATE sessions-builder SET  metadata_%v = $1
 		WHERE session_id = $2`
 	return c.conn.Exec(fmt.Sprintf(sqlRequest, keyNo), value, sessionID)
 }
@@ -136,7 +153,7 @@ func (c *cacheImpl) InsertUnstartedSession(s *UnstartedSession) error {
 
 func (c *cacheImpl) GetSessionDuration(sessionID uint64) (uint64, error) {
 	var dur uint64
-	if err := c.conn.QueryRow("SELECT COALESCE( duration, 0 ) FROM sessions WHERE session_id=$1", sessionID).Scan(&dur); err != nil {
+	if err := c.conn.QueryRow("SELECT COALESCE( duration, 0 ) FROM sessions-builder WHERE session_id=$1", sessionID).Scan(&dur); err != nil {
 		return 0, err
 	}
 	return dur, nil
@@ -149,7 +166,7 @@ func (c *cacheImpl) InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) e
 	}
 	var newDuration uint64
 	if err := c.conn.QueryRow(`
-		UPDATE sessions SET duration=$2 - start_ts
+		UPDATE sessions-builder SET duration=$2 - start_ts
 		WHERE session_id=$1
 		RETURNING duration
 	`,
@@ -198,7 +215,7 @@ func (c *cacheImpl) InsertSession(sessionID uint64, s *messages.SessionStart) er
 
 func (c *cacheImpl) insertSessionStart(sessionID uint64, s *types.Session) error {
 	return c.conn.Exec(`
-		INSERT INTO sessions (
+		INSERT INTO sessions-builder (
 			session_id, project_id, start_ts,
 			user_uuid, user_device, user_device_type, user_country,
 			user_os, user_os_version,
@@ -226,21 +243,4 @@ func (c *cacheImpl) insertSessionStart(sessionID uint64, s *types.Session) error
 		s.UserAgent, s.UserBrowser, s.UserBrowserVersion, s.UserDeviceMemorySize, s.UserDeviceHeapSize,
 		s.UserID,
 	)
-}
-
-type cacheImpl struct {
-	conn                     postgres.Pool
-	sessions                 map[uint64]*types.Session //remove by timeout to avoid memory leak
-	projects                 map[uint32]*ProjectMeta
-	projectsByKeys           sync.Map
-	projectExpirationTimeout time.Duration
-}
-
-func New(pgConn postgres.Pool, projectExpirationTimeoutMs int64) (Cache, error) {
-	return &cacheImpl{
-		conn:                     pgConn,
-		sessions:                 make(map[uint64]*types.Session),
-		projects:                 make(map[uint32]*ProjectMeta),
-		projectExpirationTimeout: time.Duration(1000 * projectExpirationTimeoutMs),
-	}, nil
 }
