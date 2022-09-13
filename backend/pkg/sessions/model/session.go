@@ -1,4 +1,4 @@
-package types
+package model
 
 type Session struct {
 	SessionID            uint64
@@ -18,8 +18,6 @@ type Session struct {
 	ErrorsCount          int
 	IssueTypes           []string
 	IssueScore           int
-	UserID               *string
-	UserAnonymousID      *string
 	Platform             string
 	UserAgent            string
 	UserBrowser          string
@@ -27,6 +25,8 @@ type Session struct {
 	UserDeviceType       string
 	UserDeviceMemorySize uint64
 	UserDeviceHeapSize   uint64
+	UserID               *string
+	UserAnonymousID      *string
 	Metadata1            *string
 	Metadata2            *string
 	Metadata3            *string
@@ -62,4 +62,19 @@ func (s *Session) SetMetadata(keyNo uint, value string) {
 	case 10:
 		s.Metadata10 = &value
 	}
+}
+
+type UnstartedSession struct {
+	ProjectKey         string
+	TrackerVersion     string
+	DoNotTrack         bool
+	Platform           string
+	UserAgent          string
+	UserOS             string
+	UserOSVersion      string
+	UserBrowser        string
+	UserBrowserVersion string
+	UserDevice         string
+	UserDeviceType     string
+	UserCountry        string
 }

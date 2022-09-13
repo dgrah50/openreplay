@@ -9,8 +9,8 @@ import (
 	"math/rand"
 	"net/http"
 	"openreplay/backend/internal/http/uuid"
-	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/flakeid"
+	"openreplay/backend/pkg/sessions/model"
 	"strconv"
 	"time"
 
@@ -205,7 +205,7 @@ func (e *Router) notStartedHandlerWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	country := e.services.GeoIP.ExtractISOCodeFromHTTPRequest(r)
-	err = e.services.Database.InsertUnstartedSession(cache.UnstartedSession{
+	err = e.services.Database.InsertUnstartedSession(&model.UnstartedSession{
 		ProjectKey:         *req.ProjectKey,
 		TrackerVersion:     req.TrackerVersion,
 		DoNotTrack:         req.DoNotTrack,

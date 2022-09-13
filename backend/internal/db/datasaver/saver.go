@@ -1,11 +1,11 @@
 package datasaver
 
 import (
-	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/db/postgres"
-	"openreplay/backend/pkg/db/sessions"
 	"openreplay/backend/pkg/db/stats"
 	"openreplay/backend/pkg/queue/types"
+	"openreplay/backend/pkg/sessions"
+	"openreplay/backend/pkg/sessions/cache"
 )
 
 type Saver struct {

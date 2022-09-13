@@ -3,9 +3,8 @@ package datasaver
 import (
 	"errors"
 	"log"
-	"openreplay/backend/pkg/db/cache"
-	. "openreplay/backend/pkg/db/types"
 	. "openreplay/backend/pkg/messages"
+	"openreplay/backend/pkg/sessions/cache"
 )
 
 func (si *Saver) InitStats() {

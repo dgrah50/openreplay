@@ -9,11 +9,11 @@ import (
 	"openreplay/backend/internal/http/server"
 	"openreplay/backend/internal/http/services"
 	"openreplay/backend/pkg/monitoring"
+	"openreplay/backend/pkg/sessions/cache"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/db/postgres"
 	"openreplay/backend/pkg/queue"
 )

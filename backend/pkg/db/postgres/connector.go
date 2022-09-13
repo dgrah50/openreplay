@@ -5,9 +5,9 @@ import (
 	"openreplay/backend/pkg/db/autocomplete"
 	"openreplay/backend/pkg/db/batch"
 	"openreplay/backend/pkg/db/bulk"
-	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/messages"
 	"openreplay/backend/pkg/monitoring"
+	"openreplay/backend/pkg/sessions/cache"
 )
 
 type Events interface {

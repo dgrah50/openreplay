@@ -5,14 +5,14 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	"openreplay/backend/pkg/queue/types"
+	"openreplay/backend/pkg/sessions/cache"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"openreplay/backend/internal/config/ender"
-	"openreplay/backend/internal/sessionender"
-	"openreplay/backend/pkg/db/cache"
+	service "openreplay/backend/internal/ender"
 	"openreplay/backend/pkg/db/postgres"
 	"openreplay/backend/pkg/intervals"
 	logger "openreplay/backend/pkg/log"
@@ -44,7 +44,7 @@ func main() {
 
 	// Init all modules
 	statsLogger := logger.NewQueueStats(cfg.LoggerTimeout)
-	sessions, err := sessionender.New(metrics, intervals.EVENTS_SESSION_END_TIMEOUT, cfg.PartitionsNumber)
+	sessions, err := service.New(metrics, intervals.EVENTS_SESSION_END_TIMEOUT, cfg.PartitionsNumber)
 	if err != nil {
 		log.Printf("can't init ender service: %s", err)
 		return

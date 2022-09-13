@@ -5,6 +5,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	"openreplay/backend/pkg/queue/types"
+	"openreplay/backend/pkg/sessions/cache"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,7 +13,6 @@ import (
 
 	"openreplay/backend/internal/config/db"
 	"openreplay/backend/internal/db/datasaver"
-	"openreplay/backend/pkg/db/cache"
 	"openreplay/backend/pkg/db/postgres"
 	"openreplay/backend/pkg/handlers"
 	custom2 "openreplay/backend/pkg/handlers/custom"
