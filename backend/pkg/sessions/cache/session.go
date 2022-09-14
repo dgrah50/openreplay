@@ -10,7 +10,15 @@ import (
 
 var NilSessionInCacheError = errors.New("nil session in error")
 
-func (c *cacheImpl) GetSession(sessionID uint64) (*model.Session, error) {
+func (c *sessionsImpl) AddSession(session *model.Session) {
+	c.sessions[session.SessionID] = session
+}
+
+func (c *sessionsImpl) HasSession(sessionID uint64) bool {
+	return c.sessions[sessionID] != nil
+}
+
+func (c *sessionsImpl) GetSession(sessionID uint64) (*model.Session, error) {
 	if s, inCache := c.sessions[sessionID]; inCache {
 		if s == nil {
 			return s, NilSessionInCacheError
@@ -25,14 +33,16 @@ func (c *cacheImpl) GetSession(sessionID uint64) (*model.Session, error) {
 		return nil, err
 	}
 	c.sessions[sessionID] = s
+	// get project information
+	p, err := c.GetProject(s.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	s.SaveRequestPayload = p.SaveRequestPayloads
 	return s, nil
 }
 
-func (c *cacheImpl) DeleteSession(sessionID uint64) {
-	delete(c.sessions, sessionID)
-}
-
-func (c *cacheImpl) getSession(sessionID uint64) (*model.Session, error) {
+func (c *sessionsImpl) getSession(sessionID uint64) (*model.Session, error) {
 	s := &model.Session{SessionID: sessionID}
 	var revID, userOSVersion, userBrowserVersion *string
 	var issueTypes pgtype.EnumArray
@@ -47,7 +57,7 @@ func (c *cacheImpl) getSession(sessionID uint64) (*model.Session, error) {
 			user_browser, user_browser_version, issue_score,
 			metadata_1, metadata_2, metadata_3, metadata_4, metadata_5,
 			metadata_6, metadata_7, metadata_8, metadata_9, metadata_10
-		FROM sessions-builder
+		FROM sessions
 		WHERE session_id=$1 
 	`,
 		sessionID,

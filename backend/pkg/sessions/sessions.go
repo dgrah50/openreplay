@@ -2,6 +2,8 @@ package sessions
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"openreplay/backend/pkg/db/autocomplete"
 	"openreplay/backend/pkg/db/batch"
 	"openreplay/backend/pkg/db/postgres"
@@ -10,18 +12,20 @@ import (
 	"openreplay/backend/pkg/sessions/model"
 	"openreplay/backend/pkg/url"
 	"strings"
+	"time"
 )
 
 type Sessions interface {
 	InsertSession(sessionID uint64, s *messages.SessionStart) error
-	InsertSessionReferrer(sessionID uint64, referrer string) error
-	HandleWebSessionStart(sessionID uint64, s *messages.SessionStart) error
-	HandleWebSessionEnd(sessionID uint64, e *messages.SessionEnd) error
-	InsertWebUserID(sessionID uint64, userID *messages.UserID) error
-	InsertWebUserAnonymousID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error
-	HandleSessionStart(sessionID uint64, s *messages.SessionStart) (*model.Session, error)
+	HandleSessionStart(sessionID uint64, s *messages.SessionStart) error
+	InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) error
+	HandleSessionEnd(sessionID uint64, e *messages.SessionEnd) error
+	InsertUnStartedSession(s *model.UnstartedSession) error
+	InsertReferrer(sessionID uint64, referrer string) error
+	InsertUserID(sessionID uint64, userID *messages.UserID) error
+	InsertAnonymousUserID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error
+	InsertMetadata(sessionID uint64, metadata *messages.Metadata) error
 	GetProjectByKey(projectKey string) (*model.Project, error)
-	InsertUnstartedSession(s *model.UnstartedSession) error
 }
 
 type sessionsImpl struct {
@@ -31,56 +35,28 @@ type sessionsImpl struct {
 	autocompletes autocomplete.Autocompletes
 }
 
-func New(db postgres.Pool, cache cache.Sessions) (Sessions, error) {
-	return &sessionsImpl{
-		db:    db,
-		cache: cache,
-	}, nil
-}
-
-func (s *sessionsImpl) InsertUnstartedSession(sess *model.UnstartedSession) error {
-	return s.db.Exec(`
-		INSERT INTO unstarted_sessions (
-			project_id, 
-			tracker_version, do_not_track, 
-			platform, user_agent, 
-			user_os, user_os_version, 
-			user_browser, user_browser_version,
-			user_device, user_device_type, 
-			user_country
-		) VALUES (
-			(SELECT project_id FROM projects WHERE project_key = $1), 
-			$2, $3,
-			$4, $5, 
-			$6, $7, 
-			$8, $9,
-			$10, $11,
-			$12
-		)`,
-		sess.ProjectKey,
-		sess.TrackerVersion, sess.DoNotTrack,
-		sess.Platform, sess.UserAgent,
-		sess.UserOS, sess.UserOSVersion,
-		sess.UserBrowser, sess.UserBrowserVersion,
-		sess.UserDevice, sess.UserDeviceType,
-		sess.UserCountry,
-	)
-}
-
-func (s *sessionsImpl) GetProjectByKey(projectKey string) (*model.Project, error) {
-	return s.cache.GetProjectByKey(projectKey)
-}
-
-func getAutocompleteType(baseType string, platform string) string {
-	if platform == "web" {
-		return baseType
+func New(db postgres.Pool, cache cache.Sessions, batches batch.Batches, ac autocomplete.Autocompletes) (Sessions, error) {
+	switch {
+	case db == nil:
+		return nil, errors.New("db is empty")
+	case cache == nil:
+		return nil, errors.New("cache is empty")
+	case batches == nil:
+		return nil, errors.New("batches is empty")
+	case ac == nil:
+		return nil, errors.New("autocompletes is empty")
 	}
-	return baseType + "_" + strings.ToUpper(platform)
+	return &sessionsImpl{
+		db:            db,
+		cache:         cache,
+		batches:       batches,
+		autocompletes: ac,
+	}, nil
 }
 
 func (s *sessionsImpl) InsertSession(sessionID uint64, msg *messages.SessionStart) error {
 	return s.db.Exec(`
-		INSERT INTO sessions-builder (
+		INSERT INTO sessions (
 			session_id, project_id, start_ts,
 			user_uuid, user_device, user_device_type, user_country,
 			user_os, user_os_version,
@@ -110,7 +86,20 @@ func (s *sessionsImpl) InsertSession(sessionID uint64, msg *messages.SessionStar
 	)
 }
 
-func (s *sessionsImpl) HandleSessionStart(sessionID uint64, msg *messages.SessionStart) (*model.Session, error) {
+func (s *sessionsImpl) HandleSessionStart(sessionID uint64, sess *messages.SessionStart) error {
+	session, err := s.handleSessionStart(sessionID, sess)
+	if err != nil {
+		return err
+	}
+	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("USEROS", session.Platform), session.UserOS)
+	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("USERDEVICE", session.Platform), session.UserDevice)
+	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("USERCOUNTRY", session.Platform), session.UserCountry)
+	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("REVID", session.Platform), session.RevID)
+	s.autocompletes.InsertValue(sessionID, session.ProjectID, "USERBROWSER", session.UserBrowser)
+	return nil
+}
+
+func (s *sessionsImpl) handleSessionStart(sessionID uint64, msg *messages.SessionStart) (*model.Session, error) {
 	if s.cache.HasSession(sessionID) {
 		return nil, errors.New("this session already in cache")
 	}
@@ -138,22 +127,39 @@ func (s *sessionsImpl) HandleSessionStart(sessionID uint64, msg *messages.Sessio
 	return newSession, nil
 }
 
-func (s *sessionsImpl) HandleWebSessionStart(sessionID uint64, sess *messages.SessionStart) error {
-	session, err := s.HandleSessionStart(sessionID, sess)
+func (s *sessionsImpl) InsertSessionEnd(sessionID uint64, e *messages.SessionEnd) error {
+	currDuration, err := s.getSessionDuration(sessionID)
 	if err != nil {
+		log.Printf("getSessionDuration failed, sessID: %d, err: %s", sessionID, err)
+	}
+	var newDuration uint64
+	if err := s.db.QueryRow(`
+		UPDATE sessions SET duration=$2 - start_ts
+		WHERE session_id=$1
+		RETURNING duration
+	`,
+		sessionID, e.Timestamp,
+	).Scan(&newDuration); err != nil {
 		return err
 	}
-	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("USEROS", session.Platform), session.UserOS)
-	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("USERDEVICE", session.Platform), session.UserDevice)
-	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("USERCOUNTRY", session.Platform), session.UserCountry)
-	s.autocompletes.InsertValue(sessionID, session.ProjectID, getAutocompleteType("REVID", session.Platform), session.RevID)
-	s.autocompletes.InsertValue(sessionID, session.ProjectID, "USERBROWSER", session.UserBrowser)
+	if currDuration == newDuration {
+		return fmt.Errorf("sessionEnd duplicate, sessID: %d, prevDur: %d, newDur: %d", sessionID,
+			currDuration, newDuration)
+	}
 	return nil
 }
 
-func (s *sessionsImpl) HandleWebSessionEnd(sessionID uint64, e *messages.SessionEnd) error {
+func (s *sessionsImpl) getSessionDuration(sessionID uint64) (uint64, error) {
+	var dur uint64
+	if err := s.db.QueryRow("SELECT COALESCE( duration, 0 ) FROM sessions WHERE session_id=$1", sessionID).Scan(&dur); err != nil {
+		return 0, err
+	}
+	return dur, nil
+}
+
+func (s *sessionsImpl) HandleSessionEnd(sessionID uint64, e *messages.SessionEnd) error {
 	sqlRequest := `
-	UPDATE sessions-builder
+	UPDATE sessions
 		SET issue_types=(SELECT 
 			CASE WHEN errors_count > 0 THEN
 			  (COALESCE(ARRAY_AGG(DISTINCT ps.type), '{}') || 'js_exception'::issue_type)::issue_type[]
@@ -164,15 +170,39 @@ func (s *sessionsImpl) HandleWebSessionEnd(sessionID uint64, e *messages.Session
       INNER JOIN issues AS ps USING (issue_id)
                 WHERE session_id = $1)
 		WHERE session_id = $1`
-	err := s.db.Exec(sqlRequest, sessionID)
-	if err != nil {
-		return err
-	}
-	s.cache.DeleteSession(sessionID)
-	return nil
+	return s.db.Exec(sqlRequest, sessionID)
 }
 
-func (s *sessionsImpl) InsertSessionReferrer(sessionID uint64, referrer string) error {
+func (s *sessionsImpl) InsertUnStartedSession(sess *model.UnstartedSession) error {
+	return s.db.Exec(`
+		INSERT INTO unstarted_sessions (
+			project_id, 
+			tracker_version, do_not_track, 
+			platform, user_agent, 
+			user_os, user_os_version, 
+			user_browser, user_browser_version,
+			user_device, user_device_type, 
+			user_country
+		) VALUES (
+			(SELECT project_id FROM projects WHERE project_key = $1), 
+			$2, $3,
+			$4, $5, 
+			$6, $7, 
+			$8, $9,
+			$10, $11,
+			$12
+		)`,
+		sess.ProjectKey,
+		sess.TrackerVersion, sess.DoNotTrack,
+		sess.Platform, sess.UserAgent,
+		sess.UserOS, sess.UserOSVersion,
+		sess.UserBrowser, sess.UserBrowserVersion,
+		sess.UserDevice, sess.UserDeviceType,
+		sess.UserCountry,
+	)
+}
+
+func (s *sessionsImpl) InsertReferrer(sessionID uint64, referrer string) error {
 	_, err := s.cache.GetSession(sessionID)
 	if err != nil {
 		return err
@@ -181,25 +211,36 @@ func (s *sessionsImpl) InsertSessionReferrer(sessionID uint64, referrer string) 
 		return nil
 	}
 	return s.db.Exec(`
-		UPDATE sessions-builder 
+		UPDATE sessions 
 		SET referrer = $1, base_referrer = $2
 		WHERE session_id = $3 AND referrer IS NULL`,
 		referrer, url.DiscardURLQuery(referrer), sessionID)
 }
 
-func (s *sessionsImpl) InsertWebUserID(sessionID uint64, userID *messages.UserID) error {
+func (s *sessionsImpl) InsertUserID(sessionID uint64, userID *messages.UserID) error {
 	session, err := s.cache.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
-	err = s.InsertUserID(sessionID, userID.ID)
+	err = s.insertUserID(sessionID, userID.ID)
 	if err == nil {
 		s.autocompletes.InsertValue(sessionID, session.ProjectID, "USERID", userID.ID)
 	}
 	return err
 }
 
-func (s *sessionsImpl) InsertWebUserAnonymousID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error {
+func (s *sessionsImpl) insertUserID(sessionID uint64, userID string) error {
+	sqlRequest := `
+		UPDATE sessions SET  user_id = $1
+		WHERE session_id = $2`
+	s.batches.Queue(sessionID, sqlRequest, userID, sessionID)
+
+	// Record approximate message size
+	s.batches.UpdateSize(sessionID, len(sqlRequest)+len(userID)+8)
+	return nil
+}
+
+func (s *sessionsImpl) InsertAnonymousUserID(sessionID uint64, userAnonymousID *messages.UserAnonymousID) error {
 	session, err := s.cache.GetSession(sessionID)
 	if err != nil {
 		return err
@@ -211,24 +252,53 @@ func (s *sessionsImpl) InsertWebUserAnonymousID(sessionID uint64, userAnonymousI
 	return err
 }
 
-func (s *sessionsImpl) InsertUserID(sessionID uint64, userID string) error {
-	sqlRequest := `
-		UPDATE sessions-builder SET  user_id = $1
-		WHERE session_id = $2`
-	s.batches.Queue(sessionID, sqlRequest, userID, sessionID)
-
-	// Record approximate message size
-	s.batches.UpdateSize(sessionID, len(sqlRequest)+len(userID)+8)
-	return nil
-}
-
 func (s *sessionsImpl) InsertUserAnonymousID(sessionID uint64, userAnonymousID string) error {
 	sqlRequest := `
-		UPDATE sessions-builder SET  user_anonymous_id = $1
+		UPDATE sessions SET  user_anonymous_id = $1
 		WHERE session_id = $2`
 	s.batches.Queue(sessionID, sqlRequest, userAnonymousID, sessionID)
 
 	// Record approximate message size
 	s.batches.UpdateSize(sessionID, len(sqlRequest)+len(userAnonymousID)+8)
 	return nil
+}
+
+func (s *sessionsImpl) InsertMetadata(sessionID uint64, metadata *messages.Metadata) error {
+	session, err := s.cache.GetSession(sessionID)
+	if err != nil {
+		return err
+	}
+	keyNo, err := s.cache.GetMetadataNo(sessionID, metadata.Key)
+	if err != nil {
+		return err
+	}
+	if err := s.insertMetadata(sessionID, keyNo, metadata.Value); err != nil {
+		// Try to insert metadata after one minute
+		time.AfterFunc(time.Minute, func() {
+			if err := s.insertMetadata(sessionID, keyNo, metadata.Value); err != nil {
+				log.Printf("metadata retry err: %s", err)
+			}
+		})
+		return err
+	}
+	session.SetMetadata(keyNo, metadata.Value)
+	return nil
+}
+
+func (s *sessionsImpl) insertMetadata(sessionID uint64, keyNo uint, value string) error {
+	sqlRequest := `
+		UPDATE sessions SET  metadata_%v = $1
+		WHERE session_id = $2`
+	return s.db.Exec(fmt.Sprintf(sqlRequest, keyNo), value, sessionID)
+}
+
+func (s *sessionsImpl) GetProjectByKey(projectKey string) (*model.Project, error) {
+	return s.cache.GetProjectByKey(projectKey)
+}
+
+func getAutocompleteType(baseType string, platform string) string {
+	if platform == "web" {
+		return baseType
+	}
+	return baseType + "_" + strings.ToUpper(platform)
 }

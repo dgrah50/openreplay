@@ -37,6 +37,7 @@ type Session struct {
 	Metadata8            *string
 	Metadata9            *string
 	Metadata10           *string
+	SaveRequestPayload   bool
 }
 
 func (s *Session) SetMetadata(keyNo uint, value string) {

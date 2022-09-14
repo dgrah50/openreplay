@@ -1,14 +1,17 @@
 package queue
 
 import (
+	"openreplay/backend/pkg/kafka"
+	"openreplay/backend/pkg/license"
 	"openreplay/backend/pkg/queue/types"
-	"openreplay/backend/pkg/redisstream"
 )
 
-func NewConsumer(group string, topics []string, handler types.MessageHandler, _ bool, _ int) types.Consumer {
-	return redisstream.NewConsumer(group, topics, handler)
+func NewConsumer(group string, topics []string, handler types.MessageHandler, autoCommit bool, messageSizeLimit int) types.Consumer {
+	license.CheckLicense()
+	return kafka.NewConsumer(group, topics, handler, autoCommit, messageSizeLimit)
 }
 
-func NewProducer(_ int, _ bool) types.Producer {
-	return redisstream.NewProducer()
+func NewProducer(messageSizeLimit int, useBatch bool) types.Producer {
+	license.CheckLicense()
+	return kafka.NewProducer(messageSizeLimit, useBatch)
 }

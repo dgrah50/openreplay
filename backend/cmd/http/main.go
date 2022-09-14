@@ -8,7 +8,10 @@ import (
 	"openreplay/backend/internal/http/router"
 	"openreplay/backend/internal/http/server"
 	"openreplay/backend/internal/http/services"
+	"openreplay/backend/pkg/db/autocomplete"
+	"openreplay/backend/pkg/db/batch"
 	"openreplay/backend/pkg/monitoring"
+	sessions2 "openreplay/backend/pkg/sessions"
 	"openreplay/backend/pkg/sessions/cache"
 	"os"
 	"os/signal"
@@ -42,9 +45,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
 	}
+	batches := batch.New(connWrapper, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+	autocompletes, err := autocomplete.New(connWrapper)
+	if err != nil {
+		log.Fatalf("can't init autocompletes: %s", err)
+	}
+	// Sessions
+	sessionService, err := sessions2.New(connWrapper, cacheService, batches, autocompletes)
+	if err != nil {
+		log.Fatalf("can't create session service: %s", err)
+	}
 
 	// Build all services
-	services := services.New(cfg, producer, cacheService)
+	services := services.New(cfg, producer, sessionService)
 
 	// Init server's routes
 	router, err := router.NewRouter(cfg, services, metrics)

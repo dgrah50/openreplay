@@ -204,13 +204,8 @@ func (e *eventsImpl) InsertFetchEvent(sessionID uint64, evt *messages.FetchEvent
 	if err != nil {
 		return err
 	}
-	project, err := e.sessions.GetProject(session.ProjectID)
-	if err != nil {
-		return err
-	}
-
 	var request, response *string
-	if project.SaveRequestPayloads {
+	if session.SaveRequestPayload {
 		request = &evt.Request
 		response = &evt.Response
 	}
@@ -250,13 +245,9 @@ func (e *eventsImpl) InsertGraphQLEvent(sessionID uint64, evt *messages.GraphQLE
 	if err != nil {
 		return err
 	}
-	project, err := e.sessions.GetProject(session.ProjectID)
-	if err != nil {
-		return err
-	}
 
 	var request, response *string
-	if project.SaveRequestPayloads {
+	if session.SaveRequestPayload {
 		request = &evt.Variables
 		response = &evt.Response
 	}

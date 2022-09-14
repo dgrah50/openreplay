@@ -9,7 +9,7 @@ func (mi *Saver) InsertMessage(sessionID uint64, msg Message) error {
 	switch m := msg.(type) {
 	// Common
 	case *Metadata:
-		if err := mi.cache.InsertMetadata(sessionID, m); err != nil {
+		if err := mi.sessions.InsertMetadata(sessionID, m); err != nil {
 			return fmt.Errorf("insert metadata err: %s", err)
 		}
 		return nil
@@ -18,13 +18,13 @@ func (mi *Saver) InsertMessage(sessionID uint64, msg Message) error {
 
 	// Web
 	case *SessionStart:
-		return mi.sessions.HandleWebSessionStart(sessionID, m)
+		return mi.sessions.HandleSessionStart(sessionID, m)
 	case *SessionEnd:
-		return mi.sessions.HandleWebSessionEnd(sessionID, m)
+		return mi.sessions.HandleSessionEnd(sessionID, m)
 	case *UserID:
-		return mi.sessions.InsertWebUserID(sessionID, m)
+		return mi.sessions.InsertUserID(sessionID, m)
 	case *UserAnonymousID:
-		return mi.sessions.InsertWebUserAnonymousID(sessionID, m)
+		return mi.sessions.InsertAnonymousUserID(sessionID, m)
 	case *CustomEvent:
 		return mi.events.InsertCustomEvent(sessionID, m)
 	case *ClickEvent:

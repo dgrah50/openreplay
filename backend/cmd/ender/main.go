@@ -4,7 +4,10 @@ import (
 	"context"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
+	"openreplay/backend/pkg/db/autocomplete"
+	"openreplay/backend/pkg/db/batch"
 	"openreplay/backend/pkg/queue/types"
+	sessions2 "openreplay/backend/pkg/sessions"
 	"openreplay/backend/pkg/sessions/cache"
 	"os"
 	"os/signal"
@@ -40,6 +43,16 @@ func main() {
 	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
+	}
+	batches := batch.New(connWrapper, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+	autocompletes, err := autocomplete.New(connWrapper)
+	if err != nil {
+		log.Fatalf("can't init autocompletes: %s", err)
+	}
+	// Sessions
+	sessionService, err := sessions2.New(connWrapper, cacheService, batches, autocompletes)
+	if err != nil {
+		log.Fatalf("can't create session service: %s", err)
 	}
 
 	// Init all modules
@@ -91,7 +104,7 @@ func main() {
 			// Find ended sessions-builder and send notification to other services
 			sessions.HandleEndedSessions(func(sessionID uint64, timestamp int64) bool {
 				msg := &messages.SessionEnd{Timestamp: uint64(timestamp)}
-				err := cacheService.InsertSessionEnd(sessionID, msg)
+				err := sessionService.InsertSessionEnd(sessionID, msg)
 				if err != nil {
 					log.Printf("can't save sessionEnd to database, sessID: %d, err: %s", sessionID, err)
 					return false
