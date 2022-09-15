@@ -4,6 +4,9 @@ import (
 	"context"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
+	"openreplay/backend/pkg/db/autocomplete"
+	"openreplay/backend/pkg/db/batch"
+	"openreplay/backend/pkg/db/stats"
 	"openreplay/backend/pkg/queue/types"
 	"openreplay/backend/pkg/sessions/cache"
 	"os"
@@ -29,22 +32,35 @@ func main() {
 	cfg := db.New()
 
 	// Create pool of connections to DB (postgres)
-	conn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
+	rawConn, err := pgxpool.Connect(context.Background(), cfg.Postgres)
 	if err != nil {
 		log.Fatalf("pgxpool.Connect err: %s", err)
 	}
 	// Create pool wrapper
-	connWrapper, err := postgres.NewPool(conn, metrics)
+	conn, err := postgres.NewPool(rawConn, metrics)
 	if err != nil {
 		log.Fatalf("can't create new pool wrapper: %s", err)
 	}
 	// Create cache level for projects and sessions-builder
-	cacheService, err := cache.New(connWrapper, cfg.ProjectExpirationTimeoutMs)
+	sessionsCache, err := cache.New(conn, cfg.ProjectExpirationTimeoutMs)
 	if err != nil {
 		log.Fatalf("can't create cacher, err: %s", err)
 	}
 	// Create db layer with all necessary methods
-	dbService := postgres.NewConn(connWrapper, cacheService, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+	autocompletes, err := autocomplete.New(conn)
+	if err != nil {
+		log.Fatalf("can't init autocomplete: %s", err)
+	}
+	events, err := postgres.NewConn(conn, sessionsCache, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics, autocompletes)
+	if err != nil {
+		log.Fatalf("can't init db service: %s", err)
+	}
+	batches := batch.New(conn, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+
+	analytics, err := stats.New(conn, batches)
+	if err != nil {
+		log.Fatalf("can't create analytics: %s", err)
+	}
 
 	// HandlersFabric returns the list of message handlers we want to be applied to each incoming message.
 	handlersFabric := func() []handlers.MessageProcessor {
@@ -69,7 +85,10 @@ func main() {
 	}
 
 	// Init modules
-	saver := datasaver.New(dbService, cacheService, producer)
+	saver, err := datasaver.New(sessionsCache, events, analytics, producer)
+	if err != nil {
+		log.Fatalf("can't init events saver: %s", err)
+	}
 	saver.InitStats()
 	statsLogger := logger.NewQueueStats(cfg.LoggerTimeout)
 
@@ -143,7 +162,7 @@ func main() {
 		case <-commitTick:
 			// Send collected batches to db
 			start := time.Now()
-			dbService.Commit()
+			events.Commit()
 			pgDur := time.Now().Sub(start).Milliseconds()
 
 			start = time.Now()

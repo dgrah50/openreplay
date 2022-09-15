@@ -4,7 +4,7 @@ import (
 	"log"
 	"openreplay/backend/pkg/db/bulk"
 	"openreplay/backend/pkg/db/postgres"
-	"openreplay/backend/pkg/sessions/model"
+	"openreplay/backend/pkg/sessions"
 )
 
 type Autocompletes interface {
@@ -13,7 +13,7 @@ type Autocompletes interface {
 
 // TODO: remove
 type CH interface {
-	InsertAutocomplete(session *model.Session, msgType, msgValue string) error
+	InsertAutocomplete(session *sessions.Session, msgType, msgValue string) error
 }
 
 func (a *autocompletesImpl) SetClickHouse(ch CH) {
@@ -57,7 +57,7 @@ func (a *autocompletesImpl) InsertValue(sessionID uint64, projectID uint32, tp s
 		return
 	}
 	// Send autocomplete data to clickhouse
-	if err := a.chConn.InsertAutocomplete(&model.Session{SessionID: sessionID, ProjectID: projectID}, tp, value); err != nil {
+	if err := a.chConn.InsertAutocomplete(&sessions.Session{SessionID: sessionID, ProjectID: projectID}, tp, value); err != nil {
 		log.Printf("click house autocomplete err: %s", err)
 	}
 }

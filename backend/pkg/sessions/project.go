@@ -1,4 +1,4 @@
-package model
+package sessions
 
 import "log"
 

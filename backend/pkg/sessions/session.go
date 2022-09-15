@@ -1,4 +1,4 @@
-package model
+package sessions
 
 type Session struct {
 	SessionID            uint64

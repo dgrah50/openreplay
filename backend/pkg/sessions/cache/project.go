@@ -1,16 +1,16 @@
 package cache
 
 import (
-	"openreplay/backend/pkg/sessions/model"
+	"openreplay/backend/pkg/sessions"
 	"time"
 )
 
 type ProjectMeta struct {
-	*model.Project
+	*sessions.Project
 	expirationTime time.Time
 }
 
-func (c *sessionsImpl) GetProjectByKey(projectKey string) (*model.Project, error) {
+func (c *sessionsImpl) GetProjectByKey(projectKey string) (*sessions.Project, error) {
 	pmInterface, found := c.projectsByKeys.Load(projectKey)
 	if found {
 		if pm, ok := pmInterface.(*ProjectMeta); ok {
@@ -27,7 +27,7 @@ func (c *sessionsImpl) GetProjectByKey(projectKey string) (*model.Project, error
 	return p, nil
 }
 
-func (c *sessionsImpl) GetProject(projectID uint32) (*model.Project, error) {
+func (c *sessionsImpl) GetProject(projectID uint32) (*sessions.Project, error) {
 	if c.projects[projectID] != nil &&
 		time.Now().Before(c.projects[projectID].expirationTime) {
 		return c.projects[projectID].Project, nil
@@ -40,8 +40,8 @@ func (c *sessionsImpl) GetProject(projectID uint32) (*model.Project, error) {
 	return p, nil
 }
 
-func (c *sessionsImpl) getProjectByKey(projectKey string) (*model.Project, error) {
-	p := &model.Project{ProjectKey: projectKey}
+func (c *sessionsImpl) getProjectByKey(projectKey string) (*sessions.Project, error) {
+	p := &sessions.Project{ProjectKey: projectKey}
 	if err := c.conn.QueryRow(`
 		SELECT max_session_duration, sample_rate, project_id
 		FROM projects
@@ -54,8 +54,8 @@ func (c *sessionsImpl) getProjectByKey(projectKey string) (*model.Project, error
 	return p, nil
 }
 
-func (c *sessionsImpl) getProject(projectID uint32) (*model.Project, error) {
-	p := &model.Project{ProjectID: projectID}
+func (c *sessionsImpl) getProject(projectID uint32) (*sessions.Project, error) {
+	p := &sessions.Project{ProjectID: projectID}
 	if err := c.conn.QueryRow(`
 		SELECT project_key, max_session_duration, save_request_payloads,
 			metadata_1, metadata_2, metadata_3, metadata_4, metadata_5,

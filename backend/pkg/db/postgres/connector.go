@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"errors"
 	"log"
 	"openreplay/backend/pkg/db/autocomplete"
 	"openreplay/backend/pkg/db/batch"
@@ -37,9 +38,16 @@ type eventsImpl struct {
 	autocompletes    autocomplete.Autocompletes
 }
 
-func NewConn(pool Pool, cacher cache.Sessions, queueLimit, sizeLimit int, metrics *monitoring.Metrics) Events {
-	if metrics == nil {
-		log.Fatalf("metrics is nil")
+func NewConn(pool Pool, cacher cache.Sessions, queueLimit, sizeLimit int, metrics *monitoring.Metrics, autocompletes autocomplete.Autocompletes) (Events, error) {
+	switch {
+	case pool == nil:
+		return nil, errors.New("db is empty")
+	case cacher == nil:
+		return nil, errors.New("cache is empty")
+	case metrics == nil:
+		return nil, errors.New("metrics is empty")
+	case autocompletes == nil:
+		return nil, errors.New("autocompletes is empty")
 	}
 	conn := &eventsImpl{
 		db:       pool,
@@ -47,7 +55,7 @@ func NewConn(pool Pool, cacher cache.Sessions, queueLimit, sizeLimit int, metric
 		batches:  batch.New(pool, queueLimit, sizeLimit, metrics),
 	}
 	conn.initBulks()
-	return conn
+	return conn, nil
 }
 
 func (e *eventsImpl) Close() error {

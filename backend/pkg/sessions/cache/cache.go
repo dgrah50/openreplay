@@ -3,17 +3,17 @@ package cache
 import (
 	"errors"
 	"openreplay/backend/pkg/db/postgres"
-	"openreplay/backend/pkg/sessions/model"
+	"openreplay/backend/pkg/sessions"
 	"sync"
 	"time"
 )
 
 type Sessions interface {
-	AddSession(session *model.Session)
+	AddSession(session *sessions.Session)
 	HasSession(sessionID uint64) bool
-	GetSession(sessionID uint64) (*model.Session, error)
+	GetSession(sessionID uint64) (*sessions.Session, error)
 	GetMetadataNo(sessionID uint64, key string) (uint, error)
-	GetProjectByKey(projectKey string) (*model.Project, error)
+	GetProjectByKey(projectKey string) (*sessions.Project, error)
 }
 
 func (c *sessionsImpl) GetMetadataNo(sessionID uint64, key string) (uint, error) {
@@ -35,7 +35,7 @@ func (c *sessionsImpl) GetMetadataNo(sessionID uint64, key string) (uint, error)
 
 type sessionsImpl struct {
 	conn                     postgres.Pool
-	sessions                 map[uint64]*model.Session //remove by timeout to avoid memory leak
+	sessions                 map[uint64]*sessions.Session //remove by timeout to avoid memory leak
 	projects                 map[uint32]*ProjectMeta
 	projectsByKeys           sync.Map
 	projectExpirationTimeout time.Duration
@@ -44,7 +44,7 @@ type sessionsImpl struct {
 func New(pgConn postgres.Pool, projectExpirationTimeoutMs int64) (Sessions, error) {
 	return &sessionsImpl{
 		conn:                     pgConn,
-		sessions:                 make(map[uint64]*model.Session),
+		sessions:                 make(map[uint64]*sessions.Session),
 		projects:                 make(map[uint32]*ProjectMeta),
 		projectExpirationTimeout: time.Duration(1000 * projectExpirationTimeoutMs),
 	}, nil

@@ -5,12 +5,12 @@ import (
 	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v4"
 	"log"
-	"openreplay/backend/pkg/sessions/model"
+	"openreplay/backend/pkg/sessions"
 )
 
 var NilSessionInCacheError = errors.New("nil session in error")
 
-func (c *sessionsImpl) AddSession(session *model.Session) {
+func (c *sessionsImpl) AddSession(session *sessions.Session) {
 	c.sessions[session.SessionID] = session
 }
 
@@ -18,7 +18,7 @@ func (c *sessionsImpl) HasSession(sessionID uint64) bool {
 	return c.sessions[sessionID] != nil
 }
 
-func (c *sessionsImpl) GetSession(sessionID uint64) (*model.Session, error) {
+func (c *sessionsImpl) GetSession(sessionID uint64) (*sessions.Session, error) {
 	if s, inCache := c.sessions[sessionID]; inCache {
 		if s == nil {
 			return s, NilSessionInCacheError
@@ -42,8 +42,8 @@ func (c *sessionsImpl) GetSession(sessionID uint64) (*model.Session, error) {
 	return s, nil
 }
 
-func (c *sessionsImpl) getSession(sessionID uint64) (*model.Session, error) {
-	s := &model.Session{SessionID: sessionID}
+func (c *sessionsImpl) getSession(sessionID uint64) (*sessions.Session, error) {
+	s := &sessions.Session{SessionID: sessionID}
 	var revID, userOSVersion, userBrowserVersion *string
 	var issueTypes pgtype.EnumArray
 	if err := c.conn.QueryRow(`

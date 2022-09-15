@@ -12,7 +12,7 @@ func (si *Saver) InitStats() {
 }
 
 func (si *Saver) InsertStats(sessionID uint64, msg Message) error {
-	session, err := si.cache.GetSession(sessionID)
+	session, err := si.sessions.GetSession(sessionID)
 	if session == nil {
 		if err != nil && !errors.Is(err, cache.NilSessionInCacheError) {
 			log.Printf("Error on session retrieving from cache: %v, SessionID: %v, Message: %v", err, sessionID, msg)
