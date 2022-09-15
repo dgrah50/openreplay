@@ -9,12 +9,12 @@ import (
 	"math/rand"
 	"net/http"
 	"openreplay/backend/internal/http/uuid"
+	"openreplay/backend/pkg/db/events"
 	"openreplay/backend/pkg/flakeid"
 	"openreplay/backend/pkg/sessions"
 	"strconv"
 	"time"
 
-	"openreplay/backend/pkg/db/postgres"
 	. "openreplay/backend/pkg/messages"
 	"openreplay/backend/pkg/token"
 )
@@ -69,7 +69,7 @@ func (e *Router) startSessionHandlerWeb(w http.ResponseWriter, r *http.Request) 
 
 	p, err := e.services.Database.GetProjectByKey(*req.ProjectKey)
 	if err != nil {
-		if postgres.IsNoRowsErr(err) {
+		if events.IsNoRowsErr(err) {
 			ResponseWithError(w, http.StatusNotFound, errors.New("project doesn't exist or capture limit has been reached"))
 		} else {
 			log.Printf("can't get project by key: %s", err)

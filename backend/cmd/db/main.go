@@ -6,6 +6,7 @@ import (
 	"log"
 	"openreplay/backend/pkg/db/autocomplete"
 	"openreplay/backend/pkg/db/batch"
+	"openreplay/backend/pkg/db/events"
 	"openreplay/backend/pkg/db/stats"
 	"openreplay/backend/pkg/queue/types"
 	"openreplay/backend/pkg/sessions/cache"
@@ -24,6 +25,7 @@ import (
 	"openreplay/backend/pkg/monitoring"
 	"openreplay/backend/pkg/queue"
 	"openreplay/backend/pkg/sessions-builder"
+	sessions "openreplay/backend/pkg/sessions/storage/postgres"
 )
 
 func main() {
@@ -51,11 +53,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't init autocomplete: %s", err)
 	}
-	events, err := postgres.NewConn(conn, sessionsCache, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics, autocompletes)
+	sessionEvents, err := events.NewConn(conn, sessionsCache, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics, autocompletes)
 	if err != nil {
 		log.Fatalf("can't init db service: %s", err)
 	}
 	batches := batch.New(conn, cfg.BatchQueueLimit, cfg.BatchSizeLimit, metrics)
+	sessionsService, err := sessions.New(conn, sessionsCache, batches, autocompletes)
+	if err != nil {
+		log.Fatalf("can't init sessions: %s", err)
+	}
 
 	analytics, err := stats.New(conn, batches)
 	if err != nil {
@@ -85,7 +91,7 @@ func main() {
 	}
 
 	// Init modules
-	saver, err := datasaver.New(sessionsCache, events, analytics, producer)
+	saver, err := datasaver.New(sessionsService, sessionsCache, sessionEvents, analytics, producer)
 	if err != nil {
 		log.Fatalf("can't init events saver: %s", err)
 	}
@@ -104,7 +110,7 @@ func main() {
 
 			// Just save session data into db without additional checks
 			if err := saver.InsertMessage(sessionID, msg); err != nil {
-				if !postgres.IsPkeyViolation(err) {
+				if !events.IsPkeyViolation(err) {
 					log.Printf("Message Insertion Error %v, SessionID: %v, Message: %v", err, sessionID, msg)
 				}
 				return
@@ -122,7 +128,7 @@ func main() {
 			// Process saved heuristics messages as usual messages above in the code
 			builderMap.IterateSessionReadyMessages(sessionID, func(msg messages.Message) {
 				if err := saver.InsertMessage(sessionID, msg); err != nil {
-					if !postgres.IsPkeyViolation(err) {
+					if !events.IsPkeyViolation(err) {
 						log.Printf("Message Insertion Error %v; SessionID: %d,  Message %v", err, sessionID, msg)
 					}
 					return
@@ -162,7 +168,7 @@ func main() {
 		case <-commitTick:
 			// Send collected batches to db
 			start := time.Now()
-			events.Commit()
+			sessionEvents.Commit()
 			pgDur := time.Now().Sub(start).Milliseconds()
 
 			start = time.Now()

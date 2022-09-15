@@ -2,20 +2,22 @@ package datasaver
 
 import (
 	"errors"
-	"openreplay/backend/pkg/db/postgres"
+	"openreplay/backend/pkg/db/events"
 	"openreplay/backend/pkg/db/stats"
 	"openreplay/backend/pkg/queue/types"
+	"openreplay/backend/pkg/sessions"
 	"openreplay/backend/pkg/sessions/cache"
 )
 
 type Saver struct {
-	sessions cache.Sessions
-	events   postgres.Events
+	sessions sessions.Sessions
+	cache    cache.Sessions
+	events   events.Events
 	stats    stats.Stats
 	producer types.Producer
 }
 
-func New(sessions cache.Sessions, events postgres.Events, stats stats.Stats, producer types.Producer) (*Saver, error) {
+func New(sessions sessions.Sessions, cache cache.Sessions, events events.Events, stats stats.Stats, producer types.Producer) (*Saver, error) {
 	switch {
 	case sessions == nil:
 		return nil, errors.New("sessions is empty")
@@ -26,6 +28,7 @@ func New(sessions cache.Sessions, events postgres.Events, stats stats.Stats, pro
 	}
 	return &Saver{
 		sessions: sessions,
+		cache:    cache,
 		events:   events,
 		stats:    stats,
 		producer: producer,

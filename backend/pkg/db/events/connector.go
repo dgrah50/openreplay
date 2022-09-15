@@ -1,4 +1,4 @@
-package postgres
+package events
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"openreplay/backend/pkg/db/autocomplete"
 	"openreplay/backend/pkg/db/batch"
 	"openreplay/backend/pkg/db/bulk"
+	"openreplay/backend/pkg/db/postgres"
 	"openreplay/backend/pkg/messages"
 	"openreplay/backend/pkg/monitoring"
 	"openreplay/backend/pkg/sessions/cache"
@@ -26,7 +27,7 @@ type Events interface {
 
 // Conn contains batches, bulks and cache for all sessions-builder
 type eventsImpl struct {
-	db       Pool
+	db       postgres.Pool
 	sessions cache.Sessions
 	batches  batch.Batches
 	// bulks (common) -> commit method
@@ -38,7 +39,7 @@ type eventsImpl struct {
 	autocompletes    autocomplete.Autocompletes
 }
 
-func NewConn(pool Pool, cacher cache.Sessions, queueLimit, sizeLimit int, metrics *monitoring.Metrics, autocompletes autocomplete.Autocompletes) (Events, error) {
+func NewConn(pool postgres.Pool, cacher cache.Sessions, queueLimit, sizeLimit int, metrics *monitoring.Metrics, autocompletes autocomplete.Autocompletes) (Events, error) {
 	switch {
 	case pool == nil:
 		return nil, errors.New("db is empty")

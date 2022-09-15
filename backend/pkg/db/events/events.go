@@ -1,4 +1,4 @@
-package postgres
+package events
 
 import (
 	"fmt"
@@ -84,7 +84,7 @@ func (e *eventsImpl) InsertIssueEvent(sessionID uint64, evt *messages.IssueEvent
 	}
 	defer func() {
 		if err != nil {
-			if rollbackErr := tx.rollback(); rollbackErr != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				log.Printf("rollback err: %s", rollbackErr)
 			}
 		}
@@ -101,7 +101,7 @@ func (e *eventsImpl) InsertIssueEvent(sessionID uint64, evt *messages.IssueEvent
 		context = nil
 	}
 
-	if err = tx.exec(`
+	if err = tx.Exec(`
 		INSERT INTO issues (
 			project_id, issue_id, type, context_string, context
 		) (SELECT
@@ -113,7 +113,7 @@ func (e *eventsImpl) InsertIssueEvent(sessionID uint64, evt *messages.IssueEvent
 	); err != nil {
 		return err
 	}
-	if err = tx.exec(`
+	if err = tx.Exec(`
 		INSERT INTO events_common.issues (
 			session_id, issue_id, timestamp, seq_index, payload
 		) VALUES (
@@ -125,7 +125,7 @@ func (e *eventsImpl) InsertIssueEvent(sessionID uint64, evt *messages.IssueEvent
 	); err != nil {
 		return err
 	}
-	if err = tx.exec(`
+	if err = tx.Exec(`
 		UPDATE sessions-builder SET issue_score = issue_score + $2
 		WHERE session_id = $1`,
 		sessionID, getIssueScore(evt),
@@ -134,7 +134,7 @@ func (e *eventsImpl) InsertIssueEvent(sessionID uint64, evt *messages.IssueEvent
 	}
 	// TODO: no redundancy. Deliver to UI in a different way
 	if evt.Type == "custom" {
-		if err = tx.exec(`
+		if err = tx.Exec(`
 			INSERT INTO events_common.customs
 				(session_id, seq_index, timestamp, name, payload, level)
 			VALUES
@@ -145,7 +145,7 @@ func (e *eventsImpl) InsertIssueEvent(sessionID uint64, evt *messages.IssueEvent
 			return err
 		}
 	}
-	err = tx.commit()
+	err = tx.Commit()
 	return
 }
 
@@ -160,14 +160,14 @@ func (e *eventsImpl) InsertErrorEvent(sessionID uint64, evt *messages.ErrorEvent
 	}
 	defer func() {
 		if err != nil {
-			if rollbackErr := tx.rollback(); rollbackErr != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				log.Printf("rollback err: %s", rollbackErr)
 			}
 		}
 	}()
 	errorID := hashid.WebErrorID(session.ProjectID, evt)
 
-	if err = tx.exec(`
+	if err = tx.Exec(`
 		INSERT INTO errors
 			(error_id, project_id, source, name, message, payload)
 		VALUES
@@ -177,7 +177,7 @@ func (e *eventsImpl) InsertErrorEvent(sessionID uint64, evt *messages.ErrorEvent
 	); err != nil {
 		return err
 	}
-	if err = tx.exec(`
+	if err = tx.Exec(`
 		INSERT INTO events.errors
 			(session_id, message_id, timestamp, error_id)
 		VALUES
@@ -187,14 +187,14 @@ func (e *eventsImpl) InsertErrorEvent(sessionID uint64, evt *messages.ErrorEvent
 	); err != nil {
 		return err
 	}
-	if err = tx.exec(`
+	if err = tx.Exec(`
 		UPDATE sessions-builder SET errors_count = errors_count + 1, issue_score = issue_score + 1000
 		WHERE session_id = $1`,
 		sessionID,
 	); err != nil {
 		return err
 	}
-	err = tx.commit()
+	err = tx.Commit()
 	session.ErrorsCount += 1
 	return
 }

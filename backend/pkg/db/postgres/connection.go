@@ -106,14 +106,14 @@ func NewPool(conn *pgxpool.Pool, metrics *monitoring.Metrics) (Pool, error) {
 // TX - start
 
 type _Tx struct {
-	pgx.Tx
+	tx                pgx.Tx
 	sqlRequestTime    syncfloat64.Histogram
 	sqlRequestCounter syncfloat64.Counter
 }
 
-func (tx *_Tx) exec(sql string, args ...interface{}) error {
+func (tx *_Tx) Exec(sql string, args ...interface{}) error {
 	start := time.Now()
-	_, err := tx.Exec(context.Background(), sql, args...)
+	_, err := tx.tx.Exec(context.Background(), sql, args...)
 	method, table := methodName(sql)
 	tx.sqlRequestTime.Record(context.Background(), float64(time.Now().Sub(start).Milliseconds()),
 		attribute.String("method", method), attribute.String("table", table))
@@ -122,9 +122,9 @@ func (tx *_Tx) exec(sql string, args ...interface{}) error {
 	return err
 }
 
-func (tx *_Tx) rollback() error {
+func (tx *_Tx) Rollback() error {
 	start := time.Now()
-	err := tx.Rollback(context.Background())
+	err := tx.tx.Rollback(context.Background())
 	tx.sqlRequestTime.Record(context.Background(), float64(time.Now().Sub(start).Milliseconds()),
 		attribute.String("method", "rollback"))
 	tx.sqlRequestCounter.Add(context.Background(), 1,
@@ -132,9 +132,9 @@ func (tx *_Tx) rollback() error {
 	return err
 }
 
-func (tx *_Tx) commit() error {
+func (tx *_Tx) Commit() error {
 	start := time.Now()
-	err := tx.Commit(context.Background())
+	err := tx.tx.Commit(context.Background())
 	tx.sqlRequestTime.Record(context.Background(), float64(time.Now().Sub(start).Milliseconds()),
 		attribute.String("method", "commit"))
 	tx.sqlRequestCounter.Add(context.Background(), 1,
