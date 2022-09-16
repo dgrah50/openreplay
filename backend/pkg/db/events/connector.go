@@ -51,9 +51,10 @@ func NewConn(pool postgres.Pool, cacher cache.Sessions, queueLimit, sizeLimit in
 		return nil, errors.New("autocompletes is empty")
 	}
 	conn := &eventsImpl{
-		db:       pool,
-		sessions: cacher,
-		batches:  batch.New(pool, queueLimit, sizeLimit, metrics),
+		db:            pool,
+		sessions:      cacher,
+		batches:       batch.New(pool, queueLimit, sizeLimit, metrics),
+		autocompletes: autocompletes,
 	}
 	conn.initBulks()
 	return conn, nil
