@@ -11,8 +11,8 @@ import (
 	"openreplay/backend/pkg/db/autocomplete"
 	"openreplay/backend/pkg/db/batch"
 	"openreplay/backend/pkg/monitoring"
-	sessions2 "openreplay/backend/pkg/sessions"
 	"openreplay/backend/pkg/sessions/cache"
+	sessions "openreplay/backend/pkg/sessions/storage/postgres"
 	"os"
 	"os/signal"
 	"syscall"
@@ -51,7 +51,7 @@ func main() {
 		log.Fatalf("can't init autocompletes: %s", err)
 	}
 	// Sessions
-	sessionService, err := sessions2.New(connWrapper, cacheService, batches, autocompletes)
+	sessionService, err := sessions.New(connWrapper, cacheService, batches, autocompletes)
 	if err != nil {
 		log.Fatalf("can't create session service: %s", err)
 	}
