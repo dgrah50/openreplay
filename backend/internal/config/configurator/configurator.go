@@ -42,7 +42,6 @@ func readFile(path string) (map[string]string, error) {
 func parseFile(a interface{}, path string) {
 	envs, err := readFile(path)
 	if err != nil {
-		log.Printf("can't parse config file: %s", err)
 		return
 	}
 
