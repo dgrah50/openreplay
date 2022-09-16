@@ -31,6 +31,7 @@ func New(db postgres.Pool) (Autocompletes, error) {
 	a := &autocompletesImpl{
 		db: db,
 	}
+	a.init()
 	return a, nil
 }
 
